@@ -7,7 +7,18 @@ class HomePage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("Welcome People")),
-      body: const Center(child: Text("You are now logged in!")),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 200.0,
+              height: 300.0,
+              child: Card(child: Text('Hello World!')),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
