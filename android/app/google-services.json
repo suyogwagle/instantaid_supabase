@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1057721621803",
+    "project_id": "instantaid-9ce39",
+    "storage_bucket": "instantaid-9ce39.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1057721621803:android:4b8432cbfed5edae66796e",
+        "android_client_info": {
+          "package_name": "com.example.instant_aid"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCxFW88pX8EJKULlXNuVW6M5VibA2K2W5I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
