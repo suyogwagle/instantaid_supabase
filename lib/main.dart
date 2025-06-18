@@ -19,6 +19,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'InstantAID Auth',
       theme: ThemeData(primarySwatch: Colors.teal),
+      debugShowCheckedModeBanner: false,
       home: const AuthPage(),
     );
   }
