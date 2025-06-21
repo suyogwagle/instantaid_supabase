@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'models/user_model.dart';
+import 'widget/state_transition.dart';
 
 class HomePage extends StatelessWidget {
   final UserModel user;
@@ -35,9 +36,13 @@ class HomePage extends StatelessWidget {
                       const Text('Welcome to InstantAID'),
                     ],
                   ),
-                  const CircleAvatar(
+                  CircleAvatar(
                     radius: 22,
-                    backgroundImage: AssetImage('assets/profile.jpg'),
+                    backgroundImage:
+                        user.photoUrl != null && user.photoUrl!.isNotEmpty
+                        ? NetworkImage(user.photoUrl!)
+                        : AssetImage('assets/images/default_avatar.png')
+                              as ImageProvider,
                   ),
                 ],
               ),
@@ -61,8 +66,30 @@ class HomePage extends StatelessWidget {
                 ),
               ),
 
+              const SizedBox(),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 24), // Only top margin
+                    child: Text(
+                      "Current Progress",
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  SlidingTrainingProgress(
+                    progressItems: [
+                      TrainingProgress(0.7, "CPR Training"),
+                      TrainingProgress(0.4, "Burn Treatment"),
+                      TrainingProgress(0.9, "Shock Management"),
+                    ],
+                  ),
+                ],
+              ),
               const SizedBox(height: 40),
-
               // More content can go here
             ],
           ),
@@ -89,13 +116,23 @@ class HomePage extends StatelessWidget {
             borderRadius: BorderRadius.circular(80),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 0, horizontal: 10),
-              
+
               child: SizedBox(
                 height: 40,
                 child: Theme(
                   data: Theme.of(context).copyWith(
-                    splashColor: const Color.fromARGB(55, 98, 108, 105), // white with ~25% opacity
-                    highlightColor: const Color.fromARGB(51,255, 255, 255,), // white with ~20% opacity
+                    splashColor: const Color.fromARGB(
+                      55,
+                      98,
+                      108,
+                      105,
+                    ), // white with ~25% opacity
+                    highlightColor: const Color.fromARGB(
+                      51,
+                      255,
+                      255,
+                      255,
+                    ), // white with ~20% opacity
                     splashFactory: InkRipple.splashFactory,
                   ),
                   child: BottomNavigationBar(
