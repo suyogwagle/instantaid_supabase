@@ -1,8 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:instant_aid/training_page.dart';
 import 'homepage.dart';
-import 'models/user_model.dart'; 
+import 'models/user_model.dart';
 
 class AuthPage extends StatefulWidget {
   const AuthPage({super.key});
@@ -20,7 +21,7 @@ class _AuthPageState extends State<AuthPage> {
   bool isLoading = false; //shows firebase loading action
 
   final _formKey =
-      GlobalKey<FormState>(); //need to validate form before submitting
+  GlobalKey<FormState>(); //need to validate form before submitting
 
   Future<void> _authenticate() async {
     setState(() => isLoading = true);
@@ -46,26 +47,26 @@ class _AuthPageState extends State<AuthPage> {
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(const SnackBar(content: Text("Login successful")));
-           final uid = userCredential.user!.uid;
-        final dbRef =
-            FirebaseDatabase.instance.ref().child("users").child(uid);
-        final snapshot = await dbRef.get();
-        if (snapshot.exists) {
-          final data = Map<String, dynamic>.from(snapshot.value as Map);
-          final userModel = UserModel.fromMap(data);
+          final uid = userCredential.user!.uid;
+          final dbRef =
+          FirebaseDatabase.instance.ref().child("users").child(uid);
+          final snapshot = await dbRef.get();
+          if (snapshot.exists) {
+            final data = Map<String, dynamic>.from(snapshot.value as Map);
+            final userModel = UserModel.fromMap(data);
 
-          // Navigate to homepage with full user details
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => HomePage(user: userModel),
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("User data not found.")),
-          );
-        }
+            // Navigate to homepage with full user details
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => HomePage(user: userModel),
+              ),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("User data not found.")),
+            );
+          }
         } else {
           // Register
           UserCredential userCredential = await FirebaseAuth.instance
@@ -220,14 +221,14 @@ class _AuthPageState extends State<AuthPage> {
                       isLoading
                           ? const Center(child: CircularProgressIndicator())
                           : ElevatedButton(
-                              onPressed: _authenticate,
-                              style: ElevatedButton.styleFrom(
-                                minimumSize: const Size.fromHeight(
-                                  50,
-                                ), // height = 50, width = infinite due to layout
-                              ),
-                              child: Text(isLogin ? 'Login' : 'Register'),
-                            ),
+                        onPressed: _authenticate,
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(
+                            50,
+                          ), // height = 50, width = infinite due to layout
+                        ),
+                        child: Text(isLogin ? 'Login' : 'Register'),
+                      ),
                       const SizedBox(height: 12),
                       TextButton(
                         onPressed: () => setState(() => isLogin = !isLogin),
@@ -245,7 +246,11 @@ class _AuthPageState extends State<AuthPage> {
             const SizedBox(height: 16),
             ElevatedButton.icon(
               onPressed: () {
-                // Navigate to emergency screen or trigger emergency logic
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const TrainingPage(),
+                  ),
+                );
               },
               icon: const Icon(Icons.warning, color: Colors.white),
               label: const Text(
