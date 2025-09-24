@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:instant_aid/main.dart';
 import 'models/user_model.dart';
 import 'widget/state_transition.dart';
 
@@ -27,7 +28,7 @@ class HomePage extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Hello, ${user.name}',
+                        'Hello, ${user.fullName ?? user.username ?? 'User'}',
                         style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -36,14 +37,47 @@ class HomePage extends StatelessWidget {
                       const Text('Welcome to InstantAID'),
                     ],
                   ),
-                  CircleAvatar(
-                    radius: 22,
-                    backgroundImage:
-                        user.photoUrl != null && user.photoUrl!.isNotEmpty
-                        ? NetworkImage(user.photoUrl!)
-                        : AssetImage('assets/images/default_avatar.png')
-                              as ImageProvider,
-                  ),
+                  PopupMenuButton<int>(
+                    onSelected: (value) async {
+                      if (value == 0) {
+                        // Profile page
+                        Navigator.pushNamed(context, '/profile');
+                      } else if (value == 1) {
+                        // Settings page
+                        Navigator.pushNamed(context, '/settings');
+                      } else if (value == 2) {
+                        // Logout
+                        await supabase.auth.signOut();
+
+                        // After logout, redirect user to login page
+                        Navigator.pushReplacementNamed(context, '/login');
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 0,
+                        child: Text("Profile"),
+                      ),
+                      const PopupMenuItem(
+                        value: 1,
+                        child: Text("Settings"),
+                      ),
+                      const PopupMenuItem(
+                        value: 2,
+                        child: Text("Logout"),
+                      ),
+                    ],
+                    child: CircleAvatar(
+                      radius: 22,
+                      backgroundImage: (user.avatarUrl != null && user.avatarUrl!.isNotEmpty)
+                          ? NetworkImage(user.avatarUrl!)
+                          : const AssetImage('assets/images/default_avatar.png')
+                      as ImageProvider,
+                    ),
+                  )
+
+
+
                 ],
               ),
 

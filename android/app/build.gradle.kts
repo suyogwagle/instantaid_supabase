@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.example.instant_aid"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.example.instant_aid"

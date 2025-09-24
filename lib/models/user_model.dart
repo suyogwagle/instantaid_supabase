@@ -1,31 +1,54 @@
 class UserModel {
-  final String uid;
-  final String name;
-  final String email;
-  final String? photoUrl;
+  final String id;
+  final DateTime? updatedAt;
+  final String? username;
+  final String? fullName;
+  final String? avatarUrl;
 
   UserModel({
-    required this.uid,
-    required this.name,
-    required this.email,
-    this.photoUrl,
+    required this.id,
+    this.updatedAt,
+    this.username,
+    this.fullName,
+    this.avatarUrl,
   });
 
   factory UserModel.fromMap(Map<String, dynamic> map) {
     return UserModel(
-      uid: map['uid'],
-      name: map['name'],
-      email: map['email'],
-      photoUrl: map['photoUrl'],
+      id: map['id'] as String,
+      updatedAt: map['updated_at'] != null
+          ? DateTime.parse(map['updated_at'] as String)
+          : null,
+      username: map['username'] as String?,
+      fullName: map['full_name'] as String?,
+      avatarUrl: map['avatar_url'] as String?,
     );
   }
 
   Map<String, dynamic> toMap() {
     return {
-      'uid': uid,
-      'name': name,
-      'email': email,
-      if (photoUrl != null) 'photoUrl': photoUrl,
+      'id': id,
+      'updated_at': updatedAt?.toIso8601String(),
+      'username': username,
+      'full_name': fullName,
+      'avatar_url': avatarUrl,
     };
   }
+
+  UserModel copyWith({
+    String? id,
+    DateTime? updatedAt,
+    String? username,
+    String? fullName,
+    String? avatarUrl,
+  }) {
+    return UserModel(
+      id: id ?? this.id,
+      updatedAt: updatedAt ?? this.updatedAt,
+      username: username ?? this.username,
+      fullName: fullName ?? this.fullName,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+    );
+  }
 }
+
