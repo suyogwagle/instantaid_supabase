@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:instant_aid/main.dart';
 import 'package:instant_aid/models/user_model.dart';
 import 'package:instant_aid/homepage.dart';
+import 'package:instant_aid/training_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class LoginPage extends StatefulWidget {
@@ -219,6 +220,36 @@ class _LoginPageState extends State<LoginPage> {
                     ],
                   ),
                 ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const TrainingPage(),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.warning, color: Colors.white),
+              label: const Text(
+                "EMERGENCY MODE",
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.5,
+                  color: Colors.white,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 10,
+                shadowColor: Colors.redAccent,
+                minimumSize: const Size.fromHeight(60),
               ),
             ),
           ],
