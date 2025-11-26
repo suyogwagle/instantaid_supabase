@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:instant_aid/training_page.dart';
+import 'package:instant_aid/emergency_page.dart';
 import 'homepage.dart';
 import 'models/user_model.dart';
 
@@ -248,7 +249,7 @@ class _AuthPageState extends State<AuthPage> {
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (context) => const TrainingPage(),
+                    builder: (context) => const EmergencyModeScreen(),
                   ),
                 );
               },
