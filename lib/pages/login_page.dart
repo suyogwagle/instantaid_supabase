@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:instant_aid/emergency_page.dart';
 import 'package:instant_aid/main.dart';
 import 'package:instant_aid/models/user_model.dart';
 import 'package:instant_aid/homepage.dart';
@@ -227,7 +228,7 @@ class _LoginPageState extends State<LoginPage> {
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (context) => const TrainingPage(),
+                    builder: (context) => const EmergencyModeScreen(),
                   ),
                 );
               },
