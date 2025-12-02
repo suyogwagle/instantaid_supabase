@@ -1,13 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:instant_aid/emergency_page.dart';
-import 'package:instant_aid/main.dart';
-import 'package:instant_aid/models/user_model.dart';
 import 'package:instant_aid/homepage.dart';
-import 'package:instant_aid/training_page.dart';
+import 'package:instant_aid/models/user_model.dart';
+import 'package:instant_aid/services/injury_classifier.dart';
+import 'package:instant_aid/services/whisper_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  final InjuryClassifier classifier;
+  final WhisperService whisper;
+
+  const LoginPage({
+    super.key,
+    required this.classifier,
+    required this.whisper,
+  });
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -34,7 +41,7 @@ class _LoginPageState extends State<LoginPage> {
 
       if (isLogin) {
         // LOGIN
-        final response = await supabase.auth.signInWithPassword(
+        final response = await Supabase.instance.client.auth.signInWithPassword(
           email: email,
           password: password,
         );
@@ -43,7 +50,7 @@ class _LoginPageState extends State<LoginPage> {
         if (user == null) throw AuthException("User not found");
 
         // Fetch profile data
-        final profile = await supabase
+        final profile = await Supabase.instance.client
             .from('profiles')
             .select()
             .eq('id', user.id)
@@ -63,15 +70,14 @@ class _LoginPageState extends State<LoginPage> {
           context,
           MaterialPageRoute(builder: (_) => HomePage(user: userModel)),
         );
-
       } else {
         // REGISTER
         final name = _nameController.text.trim();
 
-        final response = await supabase.auth.signUp(
+        final response = await Supabase.instance.client.auth.signUp(
           email: email,
           password: password,
-          data: {'full_name': name}, // Trigger inserts into profiles
+          data: {'full_name': name},
           emailRedirectTo: 'io.supabase.flutterquickstart://login-callback/',
         );
 
@@ -111,7 +117,7 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
     try {
-      await supabase.auth.resetPasswordForEmail(
+      await Supabase.instance.client.auth.resetPasswordForEmail(
         email,
         redirectTo: 'io.supabase.flutterquickstart://reset-callback/',
       );
@@ -158,7 +164,7 @@ class _LoginPageState extends State<LoginPage> {
                             border: OutlineInputBorder(),
                           ),
                           validator: (value) =>
-                          value == null || value.isEmpty ? "Enter your name" : null,
+                              value == null || value.isEmpty ? "Enter your name" : null,
                         ),
                       if (!isLogin) const SizedBox(height: 16),
                       TextFormField(
@@ -168,9 +174,9 @@ class _LoginPageState extends State<LoginPage> {
                           border: OutlineInputBorder(),
                         ),
                         validator: (value) =>
-                        value == null || !value.contains('@')
-                            ? "Enter a valid email"
-                            : null,
+                            value == null || !value.contains('@')
+                                ? "Enter a valid email"
+                                : null,
                       ),
                       const SizedBox(height: 16),
                       TextFormField(
@@ -181,9 +187,9 @@ class _LoginPageState extends State<LoginPage> {
                           border: OutlineInputBorder(),
                         ),
                         validator: (value) =>
-                        value == null || value.length < 6
-                            ? "Password must be at least 6 characters"
-                            : null,
+                            value == null || value.length < 6
+                                ? "Password must be at least 6 characters"
+                                : null,
                       ),
                       if (isLogin)
                         Row(
@@ -205,12 +211,12 @@ class _LoginPageState extends State<LoginPage> {
                       isLoading
                           ? const CircularProgressIndicator()
                           : ElevatedButton(
-                        onPressed: _authenticate,
-                        style: ElevatedButton.styleFrom(
-                          minimumSize: const Size.fromHeight(50),
-                        ),
-                        child: Text(isLogin ? "Login" : "Register"),
-                      ),
+                              onPressed: _authenticate,
+                              style: ElevatedButton.styleFrom(
+                                minimumSize: const Size.fromHeight(50),
+                              ),
+                              child: Text(isLogin ? "Login" : "Register"),
+                            ),
                       const SizedBox(height: 12),
                       TextButton(
                         onPressed: () => setState(() => isLogin = !isLogin),
@@ -228,7 +234,10 @@ class _LoginPageState extends State<LoginPage> {
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (context) => const EmergencyModeScreen(),
+                    builder: (context) => EmergencyModeScreen(
+                      classifier: widget.classifier,
+                      whisper: widget.whisper,
+                    ),
                   ),
                 );
               },
@@ -259,4 +268,3 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 }
-

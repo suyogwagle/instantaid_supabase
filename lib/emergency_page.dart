@@ -1,114 +1,168 @@
 import 'package:flutter/material.dart';
+import 'package:instant_aid/services/injury_classifier.dart';
+import 'package:instant_aid/services/audio_service.dart';
+import 'package:instant_aid/services/whisper_service.dart';
+import 'package:permission_handler/permission_handler.dart';
 
-class EmergencyModeScreen extends StatelessWidget {
-  const EmergencyModeScreen({super.key});
+class EmergencyModeScreen extends StatefulWidget {
+  final InjuryClassifier classifier;
+  final WhisperService whisper;   // whisper
+
+  const EmergencyModeScreen({
+    super.key,
+    required this.classifier,
+    required this.whisper,
+  });
+
+  @override
+  State<EmergencyModeScreen> createState() => _EmergencyModeScreenState();
+}
+
+class _EmergencyModeScreenState extends State<EmergencyModeScreen> {
+  final TextEditingController controller = TextEditingController();
+  final AudioService audio = AudioService();
+
+  List<Map<String, dynamic>> messages = [];
+  String? audioPath;
+
+  InjuryClassifier get classifier => widget.classifier;
+  WhisperService get whisper => widget.whisper;   //  injected whisper
+
+  void sendMessage([String? textOverride]) async {
+    final text = (textOverride ?? controller.text).trim();
+    if (text.isEmpty) return;
+
+    setState(() {
+      messages.add({"text": text, "isUser": true});
+    });
+    controller.clear();
+
+    final result = await classifier.predict(text);
+
+    setState(() {
+      messages.add({
+        "text": "Detected emergency: $result",
+        "isUser": false,
+      });
+    });
+  }
+
+  Future<void> startRecording() async {
+    final status = await Permission.microphone.request();
+    if (!status.isGranted) {
+      setState(() {
+        messages.add({
+          "text": "⚠️ Microphone permission denied. Please enable it in Settings.",
+          "isUser": false,
+        });
+      });
+      openAppSettings();
+      return;
+    }
+
+    audioPath = await audio.startRecording();
+    if (audioPath == null) {
+      setState(() {
+        messages.add({
+          "text": "⚠️ Microphone not available.",
+          "isUser": false,
+        });
+      });
+      return;
+    }
+
+    setState(() {
+      messages.add({"text": "🎙 Recording started...", "isUser": false});
+    });
+
+    // Auto stop after 5 seconds
+    Future.delayed(const Duration(seconds: 5), () async {
+      await stopRecordingAndTranscribe();
+      audioPath = null;
+    });
+  }
+
+  Future<void> stopRecordingAndTranscribe() async {
+    await audio.stopRecording();
+    if (audioPath != null) {
+      final transcription = await whisper.transcribe(audioPath!);
+      if (transcription != null && transcription.isNotEmpty) {
+        sendMessage(transcription);
+      } else {
+        setState(() {
+          messages.add({
+            "text": "⚠️ No speech detected or transcription failed.",
+            "isUser": false,
+          });
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: const Text("Emergency Mode"),
-        centerTitle: true,
-        elevation: 0,
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Chat area
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: const [
-                  // Example bubble
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: ChatBubble(
-                      text: "K xa haalkhabar",
-                      isUser: false,
+      appBar: AppBar(title: const Text("Emergency Assistant")),
+      body: Column(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: messages.length,
+              itemBuilder: (context, i) {
+                final msg = messages[i];
+                return Align(
+                  alignment: msg["isUser"]
+                      ? Alignment.centerRight
+                      : Alignment.centerLeft,
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: msg["isUser"] ? Colors.blue : Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      msg["text"],
+                      style: TextStyle(
+                        color: msg["isUser"] ? Colors.white : Colors.black,
+                      ),
                     ),
                   ),
-                ],
-              ),
+                );
+              },
             ),
-
-            // Input area
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                border: Border(top: BorderSide(color: Colors.grey.shade300)),
-              ),
-              child: Row(
-                children: [
-                  // Image input button
-                  IconButton(
-                    onPressed: () {},
-                    icon: const Icon(Icons.image_search_rounded, size: 28),
-                  ),
-
-                  // Text input box
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: const TextField(
-                        decoration: InputDecoration(
-                          hintText: "Describe your symptoms...",
-                          border: InputBorder.none,
-                        ),
-                        maxLines: null,
-                      ),
+          ),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)],
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: controller,
+                    decoration: const InputDecoration(
+                      hintText: "Describe symptoms...",
+                      border: InputBorder.none,
                     ),
                   ),
-
-                  // Voice input
-                  IconButton(
-                    onPressed: () {},
-                    icon: const Icon(Icons.mic_rounded, size: 28),
-                  ),
-
-                  // Send button
-                  IconButton(
-                    onPressed: () {},
-                    icon: const Icon(Icons.send_rounded, size: 26),
-                  ),
-                ],
-              ),
-            )
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class ChatBubble extends StatelessWidget {
-  final String text;
-  final bool isUser;
-
-  const ChatBubble({super.key, required this.text, required this.isUser});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      padding: const EdgeInsets.symmetric(
-          horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: isUser ? Colors.blue : Colors.grey.shade300,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: isUser ? Colors.white : Colors.black,
-          fontSize: 16,
-        ),
+                ),
+                IconButton(
+                  onPressed: startRecording,
+                  icon: const Icon(Icons.mic),
+                ),
+                IconButton(
+                  onPressed: sendMessage,
+                  icon: const Icon(Icons.send),
+                )
+              ],
+            ),
+          )
+        ],
       ),
     );
   }

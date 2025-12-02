@@ -39,3 +39,8 @@ app.*.map.json
 /android/app/debug/
 /android/app/profile/
 /android/app/release/
+
+# Ignore large model files
+assets/ggml-tiny.bin
+assets/model.tflite
+
