@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:instant_aid/emergency_page.dart';
-import 'package:instant_aid/homepage.dart';
+import 'package:instant_aid/pages/emergency_page.dart';
+import 'package:instant_aid/pages/homepage.dart';
 import 'package:instant_aid/models/user_model.dart';
 import 'package:instant_aid/services/injury_classifier.dart';
 import 'package:instant_aid/services/whisper_service.dart';

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/injury_classifier.dart';
+import '../../services/injury_classifier.dart';
 
 class TextInputScreen extends StatefulWidget {
   final InjuryClassifier classifier;

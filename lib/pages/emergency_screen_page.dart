@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../services/injury_classifier.dart';
-import 'text_input_screen.dart';
+import '../../services/injury_classifier.dart';
+import '../widget/text_input_screen.dart';
 
 class EmergencyModeScreen extends StatefulWidget {
   const EmergencyModeScreen({super.key});

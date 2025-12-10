@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:instant_aid/config/constants.dart';
-import 'package:instant_aid/homepage.dart';
+import 'package:instant_aid/pages/homepage.dart';
 import 'package:instant_aid/models/user_model.dart';
 import 'package:instant_aid/pages/login_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:instant_aid/services/injury_classifier.dart';
 import 'package:instant_aid/services/whisper_service.dart';
+
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,6 +18,20 @@ Future<void> main() async {
     url: AppConstants.supabaseUrl,
     anonKey: AppConstants.supabaseAnonKey,
   );
+
+
+
+  supabase.auth.onAuthStateChange.listen((data) {
+    final event = data.event;
+
+    if (event == AuthChangeEvent.signedOut) {
+      navigatorKey.currentState?.pushNamedAndRemoveUntil('/login', (route) => false);
+    }
+
+    if (event == AuthChangeEvent.signedIn) {
+      navigatorKey.currentState?.pushNamedAndRemoveUntil('/home', (route) => false);
+    }
+  });
 
   // Preload classifier once
   final classifier = InjuryClassifier();
@@ -56,6 +73,7 @@ class MyApp extends StatelessWidget {
       title: 'InstantAID Auth',
       theme: ThemeData(primarySwatch: Colors.teal),
       debugShowCheckedModeBanner: false,
+      navigatorKey: navigatorKey,
       home: FutureBuilder<UserModel?>(
         future: _getCurrentUser(),
         builder: (context, snapshot) {

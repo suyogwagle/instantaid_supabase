@@ -18,6 +18,7 @@ dependencies:
   flutter_sound: ^9.2.13    # for recording audio
   path_provider: ^2.0.15    # to save audio files
   permission_handler: ^11.0.1
+  image_picker: ^1.2.1
 
   # Supabase
   supabase_flutter: ^2.0.0
@@ -34,4 +35,7 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/
+    - assets/ggml-tiny.bin
+    - assets/model.tflite
+    - assets/tokenizer.json
+    - assets/vocab.txt
