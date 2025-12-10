@@ -102,7 +102,7 @@ class HomeContent extends StatelessWidget {
                       'Hello, ${user.fullName ?? user.username ?? 'User'}',
                       style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                     ),
-                    const Text('Welcome to InstantAID'),
+                    const Text('Welcome to InstantAId'),
                   ],
                 ),
                 Padding(

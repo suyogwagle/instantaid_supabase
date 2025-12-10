@@ -39,3 +39,4 @@ flutter:
     - assets/model.tflite
     - assets/tokenizer.json
     - assets/vocab.txt
+    - assets/images/
