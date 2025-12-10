@@ -46,6 +46,7 @@ Future<void> main() async {
 
 final supabase = Supabase.instance.client;
 
+
 class MyApp extends StatelessWidget {
   final InjuryClassifier classifier;
   final WhisperService whisper;
@@ -74,6 +75,27 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(primarySwatch: Colors.teal),
       debugShowCheckedModeBanner: false,
       navigatorKey: navigatorKey,
+
+      routes: {
+        '/login': (context) => LoginPage(classifier: classifier, whisper: whisper),
+        '/home': (context) {
+          return FutureBuilder<UserModel?>(
+            future: _getCurrentUser(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (!snapshot.hasData) {
+                return LoginPage(classifier: classifier, whisper: whisper);
+              }
+              return HomePage(user: snapshot.data!);
+            },
+          );
+        },
+      },
+
       home: FutureBuilder<UserModel?>(
         future: _getCurrentUser(),
         builder: (context, snapshot) {
@@ -83,10 +105,8 @@ class MyApp extends StatelessWidget {
             );
           }
           if (!snapshot.hasData) {
-            // Pass classifier + whisper into LoginPage
             return LoginPage(classifier: classifier, whisper: whisper);
           }
-          // Pass whisper into HomePage too if needed
           return HomePage(user: snapshot.data!);
         },
       ),

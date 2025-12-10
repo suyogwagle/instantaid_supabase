@@ -126,7 +126,20 @@ class HomeContent extends StatelessWidget {
                       Navigator.pushNamed(context, '/settings');
                     } else if (value == 2) {
                       // Logout
-                      await supabase.auth.signOut();
+                      try {
+                        await supabase.auth.signOut();
+                        // The onAuthStateChange listener in main.dart will automatically
+                        // navigate to /login when signOut completes
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Logout failed: ${e.toString()}'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
                     }
                   },
                   itemBuilder: (context) => [
