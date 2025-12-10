@@ -62,8 +62,8 @@ class _RecommendedSectionCardState extends State<RecommendedSectionCard> {
                           child: Stack(
                             fit: StackFit.expand,
                             children: [
-                              Image.asset(
-                                'assets/images/firstaid_burns.jpg',
+                              Image.network(
+                                'https://thumbs.dreamstime.com/b/idyllic-summer-landscape-clear-mountain-lake-alps-45054687.jpg',
                                 fit: BoxFit.cover,
                                 errorBuilder: (context, error, stackTrace) {
                                   return Container(

@@ -82,8 +82,8 @@ class _TrainingPageState extends State<TrainingPage> {
       width: double.infinity,
       child: Stack(
         children: [
-          Image.asset(
-            'assets/images/firstaid_burns.jpg',
+          Image.network(
+            'https://thumbs.dreamstime.com/b/idyllic-summer-landscape-clear-mountain-lake-alps-45054687.jpg',
             fit: BoxFit.cover,
             width: double.infinity,
             height: double.infinity,
