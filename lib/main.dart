@@ -6,7 +6,7 @@ import 'package:instant_aid/pages/login_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:instant_aid/services/injury_classifier.dart';
 import 'package:instant_aid/services/whisper_service.dart';
-
+import 'package:instant_aid/services/hybrid_intent_classifier.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -18,8 +18,6 @@ Future<void> main() async {
     url: AppConstants.supabaseUrl,
     anonKey: AppConstants.supabaseAnonKey,
   );
-
-
 
   supabase.auth.onAuthStateChange.listen((data) {
     final event = data.event;
@@ -34,24 +32,40 @@ Future<void> main() async {
   });
 
   // Preload classifier once
+  debugPrint("🔄 Loading AI models...");
   final classifier = InjuryClassifier();
   await classifier.loadModel();
+  debugPrint("✅ InjuryClassifier loaded");
+
+  // NEW: Create hybrid classifier wrapper
+  final hybridClassifier = HybridIntentClassifier(classifier);
+  debugPrint("✅ HybridIntentClassifier ready");
 
   // Preload Whisper offline model once
   final whisper = WhisperService();
   await whisper.initModel();
+  debugPrint("✅ WhisperService loaded");
 
-  runApp(MyApp(classifier: classifier, whisper: whisper));
+  runApp(MyApp(
+    classifier: classifier,
+    hybridClassifier: hybridClassifier,
+    whisper: whisper,
+  ));
 }
 
 final supabase = Supabase.instance.client;
 
-
 class MyApp extends StatelessWidget {
   final InjuryClassifier classifier;
+  final HybridIntentClassifier hybridClassifier;  // NEW
   final WhisperService whisper;
 
-  const MyApp({super.key, required this.classifier, required this.whisper});
+  const MyApp({
+    super.key,
+    required this.classifier,
+    required this.hybridClassifier,  // NEW
+    required this.whisper,
+  });
 
   Future<UserModel?> _getCurrentUser() async {
     final session = supabase.auth.currentSession;
@@ -77,7 +91,11 @@ class MyApp extends StatelessWidget {
       navigatorKey: navigatorKey,
 
       routes: {
-        '/login': (context) => LoginPage(classifier: classifier, whisper: whisper),
+        '/login': (context) => LoginPage(
+          classifier: classifier,
+          whisper: whisper,
+          hybridClassifier: hybridClassifier,
+        ),
         '/home': (context) {
           return FutureBuilder<UserModel?>(
             future: _getCurrentUser(),
@@ -88,9 +106,9 @@ class MyApp extends StatelessWidget {
                 );
               }
               if (!snapshot.hasData) {
-                return LoginPage(classifier: classifier, whisper: whisper);
+                return LoginPage(classifier: classifier, whisper: whisper, hybridClassifier: hybridClassifier);
               }
-              return HomePage(user: snapshot.data!);
+              return HomePage(user: snapshot.data!, hybridClassifier: hybridClassifier);
             },
           );
         },
@@ -105,9 +123,9 @@ class MyApp extends StatelessWidget {
             );
           }
           if (!snapshot.hasData) {
-            return LoginPage(classifier: classifier, whisper: whisper);
+            return LoginPage(classifier: classifier, whisper: whisper, hybridClassifier: hybridClassifier);
           }
-          return HomePage(user: snapshot.data!);
+          return HomePage(user: snapshot.data!, hybridClassifier: hybridClassifier);
         },
       ),
     );

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:instant_aid/main.dart';
-import 'package:instant_aid/pages/emergency_page.dart';
+import 'package:instant_aid/emergency_page.dart';
 import 'package:instant_aid/pages/notifications_page.dart';
 import 'package:instant_aid/pages/userpage.dart';
+import '../services/hybrid_intent_classifier.dart';  // NEW IMPORT
+import '../services/emergency_severity.dart';  // NEW IMPORT
+import '../services/confidence_system.dart';  // NEW IMPORT
 import 'package:instant_aid/services/injury_classifier.dart';
 import 'package:instant_aid/services/whisper_service.dart';
 import 'package:instant_aid/pages/training_page.dart';
@@ -12,11 +15,13 @@ import '../widget/state_transition.dart';
 
 class HomePage extends StatefulWidget {
   final UserModel user;
-  const HomePage({super.key, required this.user});
+  final HybridIntentClassifier hybridClassifier;
+  const HomePage({super.key, required this.user, required this.hybridClassifier});
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
+
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 1;
@@ -32,7 +37,7 @@ class _HomePageState extends State<HomePage> {
     if (index == 0) {
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => UserPage(user: widget.user)),
+        MaterialPageRoute(builder: (context) => UserPage(user: widget.user,  hybridClassifier: widget.hybridClassifier)),
       );
     } else if (index == 2) {
       Future.microtask(() {
@@ -42,6 +47,7 @@ class _HomePageState extends State<HomePage> {
             builder: (context) => EmergencyModeScreen(
               classifier: classifier,
               whisper: whisper,
+              hybridClassifier: widget.hybridClassifier,
             ),
           ),
         );

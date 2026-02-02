@@ -1,10 +1,11 @@
+import 'package:flutter/material.dart';
 import 'package:whisper_ggml/whisper_ggml.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'dart:io';
 
 class WhisperService {
   final WhisperController _controller = WhisperController();
-  final WhisperModel _model = WhisperModel.tiny;
+  final WhisperModel _model = WhisperModel.base;
 
   bool _initialized = false;
   bool get isInitialized => _initialized;
@@ -23,10 +24,10 @@ class WhisperService {
         );
       }
 
-      print("Whisper model initialized offline at $modelPathBase");
+      debugPrint("Whisper model initialized offline at $modelPathBase");
       _initialized = true;
     } catch (e) {
-      print("Offline model load failed, downloading instead: $e");
+      debugPrint("Offline model load failed, downloading instead: $e");
       await _controller.downloadModel(_model);
       _initialized = true;
     }
@@ -41,7 +42,7 @@ class WhisperService {
       );
       return result?.transcription.text;
     } catch (e) {
-      print("Transcription failed: $e");
+      debugPrint("Transcription failed: $e");
       return null;
     }
   }

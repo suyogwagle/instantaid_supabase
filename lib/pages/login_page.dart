@@ -1,19 +1,22 @@
 import 'package:flutter/material.dart';
-import 'package:instant_aid/pages/emergency_page.dart';
+import 'package:instant_aid/emergency_page.dart';
 import 'package:instant_aid/pages/homepage.dart';
 import 'package:instant_aid/models/user_model.dart';
 import 'package:instant_aid/services/injury_classifier.dart';
 import 'package:instant_aid/services/whisper_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/hybrid_intent_classifier.dart';
 
 class LoginPage extends StatefulWidget {
   final InjuryClassifier classifier;
   final WhisperService whisper;
+  final HybridIntentClassifier hybridClassifier;
 
   const LoginPage({
     super.key,
     required this.classifier,
     required this.whisper,
+    required this.hybridClassifier,
   });
 
   @override
@@ -68,7 +71,7 @@ class _LoginPageState extends State<LoginPage> {
         if (!mounted) return;
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => HomePage(user: userModel)),
+          MaterialPageRoute(builder: (_) => HomePage(user: userModel, hybridClassifier: widget.hybridClassifier)),
         );
       } else {
         // REGISTER
@@ -237,6 +240,7 @@ class _LoginPageState extends State<LoginPage> {
                     builder: (context) => EmergencyModeScreen(
                       classifier: widget.classifier,
                       whisper: widget.whisper,
+                      hybridClassifier: widget.hybridClassifier,
                     ),
                   ),
                 );

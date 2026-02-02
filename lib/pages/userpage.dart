@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:instant_aid/main.dart';
 import 'package:instant_aid/models/user_model.dart';
 import 'package:instant_aid/pages/edit_profile.dart';
-import 'package:instant_aid/pages/emergency_page.dart';
+import 'package:instant_aid/emergency_page.dart';
 import 'package:instant_aid/pages/history_page.dart';
 import 'package:instant_aid/pages/homepage.dart';
+import '../services/hybrid_intent_classifier.dart';  // NEW IMPORT
 import 'package:instant_aid/pages/settings_page.dart';
 import 'package:instant_aid/services/injury_classifier.dart';
 import 'package:instant_aid/services/profile_service.dart';
@@ -12,16 +12,19 @@ import 'package:instant_aid/services/whisper_service.dart';
 
 class UserPage extends StatefulWidget {
   final UserModel user;
-  const UserPage({super.key, required this.user});
+  final HybridIntentClassifier hybridClassifier;
+  const UserPage({super.key, required this.user, required this.hybridClassifier});
 
   @override
   State<UserPage> createState() => _UserPageState();
 }
 
+
 class _UserPageState extends State<UserPage> {
   int _selectedIndex = 0;
   final InjuryClassifier classifier = InjuryClassifier();
   final WhisperService whisper = WhisperService();
+  final HybridIntentClassifier hybridClassifier = HybridIntentClassifier(InjuryClassifier());
   String? _imageUrl;
 
   Map<String, dynamic>? profile;
@@ -48,14 +51,14 @@ class _UserPageState extends State<UserPage> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => HomePage(user: widget.user),
+          builder: (context) => HomePage(user: widget.user,hybridClassifier: widget.hybridClassifier ),
         ),
       );
     } else if (index == 2) {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => EmergencyModeScreen(classifier: classifier, whisper: whisper,),
+          builder: (context) => EmergencyModeScreen(classifier: classifier, whisper: whisper, hybridClassifier: widget.hybridClassifier,),
         ),
       );
     }

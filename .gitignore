@@ -41,6 +41,9 @@ app.*.map.json
 /android/app/release/
 
 # Ignore large model files
+assets/ggml-base.bin
+assets/ggml-small.bin
 assets/ggml-tiny.bin
 assets/model.tflite
+assets/injury_classifier_quant.tflite
 
