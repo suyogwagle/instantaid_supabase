@@ -199,13 +199,14 @@ class _EmergencyModeScreenState extends State<EmergencyModeScreen>
       if (isConfident) {
         final intent = _mapImageLabelToIntent(label);
 
-        if (intent == null || intent == "healthy_human_limbs") {
+        if (intent == null ) {
           _addBotMessage(
             "✅ Image Analysis:\nDetected: ${label.replaceAll('_', ' ').toUpperCase()}\n"
                 "Confidence: ${(confidence * 100).toStringAsFixed(1)}%\n\n"
-                "This appears to be a healthy limb. No emergency first aid needed.\n"
-                "If you're experiencing an injury, please describe it or send a clearer image.",
-            "intro",
+                "I couldn't classify this injury type. Please:\n"
+                "• Describe the injury in text, or\n"
+                "• Send a clearer, well-lit image focusing on the injury",
+            "warning",
           );
         } else {
           _addBotMessage(
@@ -229,7 +230,7 @@ class _EmergencyModeScreenState extends State<EmergencyModeScreen>
         }
       } else {
         _addBotMessage(
-          "⚠️ Low confidence detection (${(confidence * 100).toStringAsFixed(1)}%).\n"
+          "⚠️ Low confidence detection.\n"
               "Please:\n• Ensure good lighting\n• Focus on the injury\n• Retake with clearer view\n\n"
               "Or describe the injury in text.",
           "warning",
@@ -244,13 +245,11 @@ class _EmergencyModeScreenState extends State<EmergencyModeScreen>
   }
 
   String? _mapImageLabelToIntent(String imageLabel) {
-    final mapping = {
-      'burn': 'burn',
-      'snakebite': 'snake_bite',
-      'wound': 'wound',
-      'healthy_human_limbs': null,
-    };
-    return mapping[imageLabel.toLowerCase()];
+    // Directly return if it exists in guidelines
+    if (emergencyGuidelines.containsKey(imageLabel)) {
+      return imageLabel;
+    }
+    return null;
   }
 
   // NEW: Enhanced text message handling with hybrid classifier
