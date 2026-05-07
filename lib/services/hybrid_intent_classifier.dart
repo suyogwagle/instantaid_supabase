@@ -1,210 +1,265 @@
+// lib/services/hybrid_intent_classifier.dart
+//
+// SIMPLIFIED AMBIGUITY POLICY:
+//   Always gather context UNLESS a high-confidence keyword fires.
+//   Keyword patterns are hand-written and unambiguous by design — if one
+//   matches, we trust it and skip context gathering entirely.
+//   For everything else (pure ML path), we always ask context questions
+//   before locking in the intent.
 
 import 'package:flutter/material.dart';
-import 'dart:math' as math;
 import 'injury_classifier.dart';
+import 'context_gatherer.dart';
+import 'ambiguity_detector.dart';
 
-/// Hybrid Intent Classifier: Fast keywords + ML fallback
 class HybridIntentClassifier {
   final InjuryClassifier _mlClassifier;
 
   HybridIntentClassifier(this._mlClassifier);
 
-  /// High-confidence keyword patterns
   static final Map<String, List<RegExp>> keywordPatterns = {
     "snake_bite": [
-      RegExp(r"\b(snake|serpent|viper|cobra).{0,10}(bite|bitten|bit)\b", caseSensitive: false),  // More flexible
+      RegExp(r"\b(snake|serpent|viper|cobra).{0,10}(bite|bitten|bit)\b",
+          caseSensitive: false),
       RegExp(r"सर्प(को)?\s*टोक"),
     ],
-
     "burn": [
-      RegExp(r"\b(fire\s*(burn|burnt|burned|scald))\b", caseSensitive: false),
-      RegExp(r"\b(fire|flame|hot\s*(water|oil))\b", caseSensitive: false),
+      RegExp(r"\b(burn|burnt|burned|scald).{0,15}(fire|flame|hot|boiling)\b",
+          caseSensitive: false),
+      RegExp(r"\b(fire|flame|boiling\s*water|hot\s*oil).{0,15}(burn|scald)\b",
+          caseSensitive: false),
       RegExp(r"जल(न|िएको|ेको)"),
     ],
-
     "fracture": [
-      RegExp(r"\b(fracture|broken\s*bone)\b", caseSensitive: false),
+      RegExp(r"\b(fracture|broken\s*bone|bone\s*broke)\b",
+          caseSensitive: false),
       RegExp(r"हड्डी\s*भाँचि"),
     ],
-
     "choking": [
-      RegExp(r"\b(choking|choke|can'?t\s*swallow)\b", caseSensitive: false),
+      RegExp(r"\b(choking|choke|can'?t\s*swallow|food\s*stuck)\b",
+          caseSensitive: false),
       RegExp(r"घाँटी\s*अड्क"),
     ],
-
     "cardiac_attack": [
-      RegExp(r"\b(heart\s*attack|cardiac|chest\s*pain)\b", caseSensitive: false),
-      RegExp(r"मुटु\s*(आक्रमण|दौरा)"),
+      RegExp(r"\b(heart\s*attack|cardiac\s*arrest|chest\s*pain)\b",
+          caseSensitive: false),
+      RegExp(r"मुटु\s*(आक्रमण|दौरा|ह्याट्याक)"),
     ],
-
     "wound": [
-      RegExp(r"\b(cut|laceration|wound|bleeding|bruise|scratch)\b", caseSensitive: false),
-      RegExp(r"घाउ|चोट|रगत"),
+      RegExp(r"\b(deep\s*cut|laceration|stab|gash|bleeding\s*wound)\b",
+          caseSensitive: false),
+      RegExp(r"गहिरो\s*घाउ|धेरै\s*रगत"),
     ],
-
     "poisoning": [
-      RegExp(r"\b(poison|toxic|swallowed)\s*(substance|chemical|pills?)\b", caseSensitive: false),
-      RegExp(r"विष"),
+      RegExp(r"\b(swallowed\s*poison|drank\s*(bleach|acid|chemical)|overdose)\b",
+          caseSensitive: false),
+      RegExp(r"विष\s*खायो|ओभरडोज"),
     ],
-
     "altitude_sickness": [
-      RegExp(r"\b(altitude\s*sickness|mountain\s*sickness)\b", caseSensitive: false),
-      RegExp(r"उचाइ\s*रोग"),
+      RegExp(
+          r"\b(altitude\s*sickness|mountain\s*sickness|AMS|sick\s*(at|on)\s*(mountain|trek))\b",
+          caseSensitive: false),
+      RegExp(r"उचाइ\s*रोग|पहाडमा\s*बिरामी"),
     ],
-
     "road_accident": [
-      RegExp(r"\b(road\s*accident|car\s*accident|crash)\b", caseSensitive: false),
-      RegExp(r"सडक\s*दुर्घटना"),
+      RegExp(r"\b(road\s*accident|car\s*crash|bike\s*accident|hit\s*by\s*(car|vehicle|truck))\b",
+          caseSensitive: false),
+      RegExp(r"सडक\s*दुर्घटना|गाडीले\s*ठोक्यो"),
     ],
-
     "electric_shock": [
-      RegExp(r"\b(electric(al)?\s*shock|electrocuted?)\b", caseSensitive: false),
-      RegExp(r"बिजुली(को)?\s*झटका"),
+      RegExp(r"\b(electric(al)?\s*shock|electrocuted?|touched\s*(live\s*wire|socket))\b",
+          caseSensitive: false),
+      RegExp(r"बिजुली(को)?\s*झटका|करेन्ट\s*लाग्यो"),
     ],
-
     "allergic_reaction": [
-      RegExp(r"\b(allergic\s*reaction|allergy|anaphylaxis)\b", caseSensitive: false),
-      RegExp(r"एलर्जी"),
+      RegExp(r"\b(anaphylaxis|severe\s*allerg|epipen|throat\s*swelling)\b",
+          caseSensitive: false),
+      RegExp(r"एलर्जी\s*रिएक्शन|घाँटी\s*सुन्नियो"),
     ],
-
     "common_cold": [
-      RegExp(r"\b(common\s*cold|light fever|flu|cough|runny\s*nose)\b", caseSensitive: false),
-      RegExp(r"रुघा|खोकी"),
+      RegExp(r"\b(common\s*cold|runny\s*nose|blocked\s*nose|sneezing)\b",
+          caseSensitive: false),
+      RegExp(r"रुघा|नाक\s*बग्यो|हाछ्युँ"),
     ],
   };
 
-  /// Main classification method
-  Future<Map<String, dynamic>> classifyIntent(String userText) async {
-    debugPrint("🔍 Classifying: $userText");
+  // ── Main entry point ───────────────────────────────────────────────────
+  //
+  // Returns:
+  //   "intent"           String
+  //   "confidence"       double
+  //   "method"           String
+  //   "needs_context"    bool   ← true for all ML-path results
+  //   "ambiguity_report" AmbiguityReport?
 
-    // STEP 1: Try fast keyword matching
-    final keywordResult = _tryKeywordMatching(userText);
-    if (keywordResult["confidence"] >= 0.8) {
-      debugPrint(" High-confidence keyword match: ${keywordResult['intent']}");
-      return keywordResult;
-    }
+  Future<Map<String, dynamic>> classifyWithAmbiguityCheck(
+      String userText) async {
 
-    // STEP 2: Fall back to ML model
-    debugPrint("📊 Using ML classifier...");
-    final mlPrediction = await _mlClassifier.predict(userText);
-
-    // Get actual ML confidence score
-    final mlConfidence = await _mlClassifier.getConfidence(userText);
-    debugPrint("📊 ML Confidence: ${(mlConfidence * 100).toStringAsFixed(1)}%");
-
-    // Check if ML returned valid result
-    if (mlPrediction == "Model not loaded" ||
-        mlPrediction == "Prediction failed" ||
-        mlPrediction == "Please explain the situation in detail.") {
-
-      // ML failed, use keyword result if available
-      if (keywordResult["intent"] != "unknown") {
-        debugPrint("⚠️ ML failed, using keyword result");
-        return keywordResult;
-      }
-
-      // Both failed
+    // ── Step 1: Keyword fast path ────────────────────────────────────────
+    // Keywords are specific compound phrases — much harder to misfire than
+    // single-word patterns.  If one hits, we trust it completely.
+    final kwResult = _tryKeywordMatching(userText);
+    if (kwResult["confidence"] >= 0.8) {
+      debugPrint("✅ Keyword hit: ${kwResult['intent']} — skipping ML + context");
       return {
-        "intent": "unknown",
-        "confidence": 0.0,
-        "method": "none",
-        "message": mlPrediction,
+        ...kwResult,
+        "needs_context"    : false,
+        "ambiguity_report" : null,
       };
     }
 
-    // STEP 3: Combine results
-    if (keywordResult["intent"] != "unknown") {
-      // Both methods found something
-      if (keywordResult["intent"] == mlPrediction) {
-        // Agreement - USE MAX confidence (not average)
-        final maxConfidence = math.max(mlConfidence, keywordResult["confidence"] as double);
-        debugPrint("✅ Keyword + ML agree: $mlPrediction (max: ${(maxConfidence * 100).toStringAsFixed(1)}%)");
+    // ── Step 2: ML inference (single call, cached) ───────────────────────
+    final mlResult = await _mlClassifier.classifyFull(userText);
+
+    if (mlResult == null) {
+      // Model unavailable — fall back to keyword if we have one.
+      if (kwResult["intent"] != "unknown") {
+        debugPrint("⚠️ ML unavailable — keyword fallback: ${kwResult['intent']}");
         return {
-          "intent": mlPrediction,
-          "confidence": maxConfidence,  // FIXED: Use MAX instead of combined
-          "ml_confidence": mlConfidence,
-          "keyword_confidence": keywordResult["confidence"],
-          "method": "hybrid_agreement"
-        };
-      } else {
-        // Disagreement - prefer ML and use its confidence
-        debugPrint("⚠️ Keyword says ${keywordResult['intent']}, ML says $mlPrediction");
-        return {
-          "intent": mlPrediction,
-          "confidence": mlConfidence,  // FIXED: Just use ML confidence as-is
-          "ml_confidence": mlConfidence,
-          "keyword_confidence": keywordResult["confidence"],
-          "method": "ml_primary",
-          "keyword_alternative": keywordResult["intent"]
+          ...kwResult,
+          "needs_context"    : true,  // still gather context even for keyword fallback
+          "ambiguity_report" : null,
         };
       }
+      return {
+        "intent"           : "unknown",
+        "confidence"       : 0.0,
+        "method"           : "none",
+        "needs_context"    : false,
+        "ambiguity_report" : null,
+      };
     }
 
-    // STEP 4: Only ML found something - use actual ML confidence
-    debugPrint("✅ ML only: $mlPrediction (${(mlConfidence * 100).toStringAsFixed(1)}%)");
+    // ── Step 3: Build ambiguity report (no extra inference) ──────────────
+    final report = AmbiguityDetector.evaluate(
+      result  : mlResult,
+      userText: userText,
+    );
+
+    // Log what the model actually thinks across all 12 classes.
+    debugPrint("🔍 ML top-1: ${report.top1Label} "
+        "${(report.top1Confidence * 100).toStringAsFixed(1)}%  |  "
+        "top-2: ${report.top2Label} "
+        "${(report.top2Confidence * 100).toStringAsFixed(1)}%  |  "
+        "gap: ${(report.gap * 100).toStringAsFixed(1)}pp  |  "
+        "best confusable: ${report.alternativeLabel}");
+
+    // ── Step 4: ALWAYS gather context on the ML path ─────────────────────
+    // We never trust ML alone on the first pass.
+    // Context questions will be asked, answers concatenated, then re-run.
     return {
-      "intent": mlPrediction,
-      "confidence": mlConfidence,
-      "ml_confidence": mlConfidence,
-      "method": "ml_only"
+      "intent"           : report.top1Label,
+      "confidence"       : report.top1Confidence,
+      "ml_confidence"    : report.top1Confidence,
+      "top2_label"       : report.top2Label,
+      "top2_confidence"  : report.top2Confidence,
+      "gap"              : report.gap,
+      "method"           : "ml_needs_context",
+      "ambiguity_report" : report,
+      "needs_context"    : true,  // ← ALWAYS true on ML path
     };
   }
 
-  /// Fast keyword matching
+  // ── Backward-compatible alias ──────────────────────────────────────────
+
+  Future<Map<String, dynamic>> classifyIntent(String userText) =>
+      classifyWithAmbiguityCheck(userText);
+
+  // ── Context-enriched re-classification ────────────────────────────────
+  // Called after context gathering is complete.
+  // Runs a fresh inference on the enriched string and returns a final,
+  // trustworthy result.  needs_context is false on the result.
+
+  Future<Map<String, dynamic>> classifyWithContext({
+    required String originalText,
+    required String candidateIntent,
+    required List<String> contextKeys,
+    required List<String> contextValues,
+    required bool isNepali,
+  }) async {
+    final enriched = ContextGatherer.buildEnrichedInput(
+      originalText  : originalText,
+      contextKeys   : contextKeys,
+      contextValues : contextValues,
+      isNepali      : isNepali,
+    );
+
+    debugPrint("🔁 Re-classifying enriched input:\n   $enriched");
+
+    // Fresh inference on the richer string (different cache key).
+    final mlResult = await _mlClassifier.classifyFull(enriched);
+
+    if (mlResult == null) {
+      return {
+        "intent"          : candidateIntent,
+        "confidence"      : 0.0,
+        "method"          : "context_enriched_ml_unavailable",
+        "enriched_text"   : enriched,
+        "original_intent" : candidateIntent,
+        "intent_changed"  : false,
+        "needs_context"   : false,
+        "ambiguity_report": null,
+      };
+    }
+
+    // Run ambiguity check on enriched result too, just for logging.
+    final report = AmbiguityDetector.evaluate(
+      result  : mlResult,
+      userText: enriched,
+    );
+
+    debugPrint("🔁 Enriched result: ${mlResult.top1Label} "
+        "${(mlResult.top1Confidence * 100).toStringAsFixed(1)}%  "
+        "(was: $candidateIntent)  "
+        "changed: ${mlResult.top1Label != candidateIntent}");
+
+    return {
+      "intent"           : mlResult.top1Label,
+      "confidence"       : mlResult.top1Confidence,
+      "ml_confidence"    : mlResult.top1Confidence,
+      "top2_label"       : mlResult.top2Label,
+      "top2_confidence"  : mlResult.top2Confidence,
+      "method"           : "context_enriched",
+      "enriched_text"    : enriched,
+      "original_intent"  : candidateIntent,
+      "intent_changed"   : mlResult.top1Label != candidateIntent,
+      "ambiguity_report" : report,
+      "needs_context"    : false,  // ← done, no more context rounds
+    };
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────
+
   Map<String, dynamic> _tryKeywordMatching(String text) {
     for (final entry in keywordPatterns.entries) {
-      final intent = entry.key;
-      final patterns = entry.value;
-
       int matches = 0;
-      for (final pattern in patterns) {
-        if (pattern.hasMatch(text)) {
-          matches++;
-        }
+      for (final pattern in entry.value) {
+        if (pattern.hasMatch(text)) matches++;
       }
-
       if (matches > 0) {
-        final confidence = (matches / patterns.length).clamp(0.5, 1.0);
         return {
-          "intent": intent,
-          "confidence": confidence,
-          "method": "keyword",
-          "matches": matches
+          "intent"    : entry.key,
+          "confidence": (matches / entry.value.length).clamp(0.5, 1.0),
+          "method"    : "keyword",
+          "matches"   : matches,
         };
       }
     }
-
     return {
-      "intent": "unknown",
+      "intent"    : "unknown",
       "confidence": 0.0,
-      "method": "keyword",
-      "matches": 0
+      "method"    : "keyword",
+      "matches"   : 0,
     };
   }
 
-  /// Handle ambiguous results
-  String getDisambiguationMessage(Map<String, dynamic> result, {bool isNepali = false}) {
-    if (result.containsKey("keyword_alternative")) {
-      final intent = result["intent"];
-      final alternative = result["keyword_alternative"];
-
-      if (isNepali) {
-        return "के तपाईंले '$alternative' भन्न खोज्नुभएको हो, वा '$intent'?";
-      } else {
-        return "Did you mean '$alternative' or '$intent'?";
-      }
+  String getDisambiguationMessage(Map<String, dynamic> result,
+      {bool isNepali = false}) {
+    if ((result["confidence"] as double) < 0.5) {
+      return isNepali
+          ? "मलाई पक्का छैन। के तपाईं थप विवरण दिन सक्नुहुन्छ?\nके कसैलाई चोट लागेको छ? के भयो?"
+          : "I'm not completely sure. Could you provide more details?\nWhat happened exactly?";
     }
-
-    if (result["confidence"] < 0.5) {
-      if (isNepali) {
-        return "मलाई पक्का छैन। के तपाईं थप विवरण दिन सक्नुहुन्छ?\n"
-            "के कसैलाई चोट लागेको छ? के भयो?";
-      } else {
-        return "I'm not completely sure. Could you provide more details?\n"
-            "For example: What happened? Is someone injured?";
-      }
-    }
-
     return "";
   }
 }

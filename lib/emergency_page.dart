@@ -7,11 +7,11 @@ import 'package:image/image.dart' as img;
 import '../services/audio_service.dart';
 import '../services/whisper_service.dart';
 import '../services/injury_classifier.dart';
+import '../services/ambiguity_detector.dart';
 import '../services/hybrid_intent_classifier.dart';  // NEW IMPORT
 import '../services/image_classifier.dart';
 import '../services/dialogue_manager.dart';
 import '../services/emergency_severity.dart';  // NEW IMPORT
-import '../services/confidence_system.dart';  // NEW IMPORT
 import '../services/tts_service.dart';
 import '../data/emergency_guidelines.dart';
 import '../data/emergency_guidelines_np.dart';
@@ -253,65 +253,129 @@ class _EmergencyModeScreenState extends State<EmergencyModeScreen>
   }
 
   // NEW: Enhanced text message handling with hybrid classifier
-  Future<void> _sendMessage(String text) async {
-    if (text.trim().isEmpty || !_modelLoaded) return;
-
-    _addUserMessage(text);
-    await _ttsService.stop();
-    setState(() => _isProcessingText = true);
-
-    try {
-      // Check if user wants to reset
-      if (_dialogueManager.isConversationComplete() ||
-          text.toLowerCase().contains("new") ||
-          text.toLowerCase().contains("another") ||
-          text.toLowerCase().contains("नयाँ")) {
-        _dialogueManager.reset();
-        _addBotMessage("🔄 Starting new emergency assessment...", "intro");
-
-        // Classify new intent using HYBRID approach
-        await _handleNewEmergency(text);
-        setState(() => _isProcessingText = false);
-        return;
-      }
-
-      // If no intent yet, classify using HYBRID approach
-      if (!_dialogueManager.hasIntent) {
-        await _handleNewEmergency(text);
-        setState(() => _isProcessingText = false);
-        return;
-      }
-
-      // Continue existing conversation
-      final responses = _dialogueManager.next(text);
-
-      // NEW: Check if response is asking for clarification
-      if (responses.length == 1 &&
-          (responses[0].contains("more detail") ||
-              responses[0].contains("थप विवरण"))) {
-        _addBotMessage(responses[0], "question");
-      } else {
-        for (final msg in responses) {
-          final type = _getMessageType(msg);
-          _addBotMessage(msg, type);
-        }
-      }
-
-    } catch (e, stack) {
-      debugPrint("❌ Error processing message: $e");
-      debugPrint("Stack: $stack");
-      _addBotMessage("❌ Error processing your message. Please try again.", "warning");
-    } finally {
+  // ── _sendMessage ─────────────────────────────────────────────────────────
+ 
+Future<void> _sendMessage(String text) async {
+  if (text.trim().isEmpty || !_modelLoaded) return;
+ 
+  _addUserMessage(text);
+  await _ttsService.stop();
+  setState(() => _isProcessingText = true);
+ 
+  try {
+    final isNepali = _isNepali(text);
+ 
+    // ── Reset triggers ──────────────────────────────────────────────────
+    if (_dialogueManager.isConversationComplete() ||
+        text.toLowerCase().contains("new") ||
+        text.toLowerCase().contains("another") ||
+        text.toLowerCase().contains("नयाँ")) {
+      _dialogueManager.reset();
+      _addBotMessage("🔄 Starting new emergency assessment...", "intro");
+      await _handleNewEmergency(text);
       setState(() => _isProcessingText = false);
+      return;
     }
+ 
+    // ── Context-gathering phase ─────────────────────────────────────────
+    if (_dialogueManager.isGatheringContext) {
+      final result = _dialogueManager.supplyContextAnswer(text, isNepali);
+ 
+      if (!result.isDone) {
+        // More context questions to ask.
+        if (result.nextQuestion != null) {
+          _addBotMessage(result.nextQuestion!, "question");
+        }
+        setState(() => _isProcessingText = false);
+        return;
+      }
+ 
+      // All context collected → re-classify on enriched string.
+      _addBotMessage(
+        isNepali
+            ? "🔁 थप जानकारीका आधारमा पुनः विश्लेषण गर्दैछु..."
+            : "🔁 Re-analysing with your context...",
+        "intro",
+      );
+ 
+      final enrichedResult = await widget.hybridClassifier.classifyWithContext(
+        originalText  : result.originalText!,
+        candidateIntent: result.candidateIntent!,
+        contextKeys   : result.contextKeys!,
+        contextValues : result.contextValues!,
+        isNepali      : isNepali,
+      );
+ 
+      final confirmedIntent = enrichedResult["intent"] as String;
+      final confirmedConf   = enrichedResult["confidence"] as double;
+      final intentChanged   = enrichedResult["intent_changed"] as bool? ?? false;
+ 
+      // Debug — comment out before release.
+      _showEnrichmentDebug(enrichedResult);
+ 
+      if (confirmedIntent == "unknown" || confirmedIntent.isEmpty) {
+        _addBotMessage(
+          isNepali
+              ? "❓ अझै बुझिएन। कृपया सिधा बताउनुहोस् — के भयो?"
+              : "❓ Still unclear. Please describe directly — what happened?",
+          "question",
+        );
+        _dialogueManager.reset();
+        setState(() => _isProcessingText = false);
+        return;
+      }
+ 
+      if (intentChanged) {
+        final oldLabel = result.candidateIntent!.replaceAll('_', ' ').toUpperCase();
+        final newLabel = confirmedIntent.replaceAll('_', ' ').toUpperCase();
+        _addBotMessage(
+          isNepali
+              ? "🔄 सुधारिएको: $oldLabel → $newLabel"
+              : "🔄 Updated based on your context: $oldLabel → $newLabel",
+          "info",
+        );
+      }
+ 
+      final responses = _dialogueManager.confirmIntentAfterContext(
+        confirmedIntent    : confirmedIntent,
+        confirmedConfidence: confirmedConf,
+        isNepali           : isNepali,
+      );
+      for (final msg in responses) {
+        _addBotMessage(msg, _getMessageType(msg));
+      }
+ 
+      setState(() => _isProcessingText = false);
+      return;
+    }
+ 
+    // ── No intent yet → fresh classification ────────────────────────────
+    if (!_dialogueManager.hasIntent) {
+      await _handleNewEmergency(text);
+      setState(() => _isProcessingText = false);
+      return;
+    }
+ 
+    // ── Clinical Q&A phase ───────────────────────────────────────────────
+    final responses = _dialogueManager.next(text);
+    for (final msg in responses) {
+      _addBotMessage(msg, _getMessageType(msg));
+    }
+ 
+  } catch (e, stack) {
+    debugPrint("❌ Error: $e\n$stack");
+    _addBotMessage("❌ Error processing your message. Please try again.", "warning");
+  } finally {
+    setState(() => _isProcessingText = false);
   }
+}
+
+
+
 
   // DEBUGGING HELPER
-// Add this method to your _EmergencyModeScreenState class
-// to see detailed confidence info in your UI
 
   //NEW: Add this method to display confidence breakdown for debugging
-  // Replace your _showConfidenceDebug() method in emergency_page.dart with this:
 
   void _showConfidenceDebug(Map<String, dynamic> intentResult) {
     final method = intentResult["method"] as String;
@@ -341,92 +405,158 @@ class _EmergencyModeScreenState extends State<EmergencyModeScreen>
     _addBotMessage(debugMsg, "info");
   }
 
-// Then in _handleNewEmergency(), after getting intentResult, add:
-// _showConfidenceDebug(intentResult);  // TEMPORARY - for debugging
+  void _showContextEnrichmentDebug(Map<String, dynamic> enrichedResult) {
+  final oldIntent = enrichedResult["original_intent"] as String;
+  final newIntent = enrichedResult["intent"] as String;
+  final confidence = enrichedResult["confidence"] as double;
+  final enrichedText = enrichedResult["enriched_text"] as String? ?? "";
+ 
+  String debugMsg = "🔁 Context Enrichment Debug:\n\n";
+  debugMsg += "Original intent : $oldIntent\n";
+  debugMsg += "New intent      : $newIntent\n";
+  debugMsg += "New confidence  : ${(confidence * 100).toStringAsFixed(1)}%\n";
+  debugMsg += "Changed         : ${enrichedResult['intent_changed']}\n\n";
+  debugMsg += "Enriched input:\n\"$enrichedText\"";
+ 
+  _addBotMessage(debugMsg, "info");
+}
 
-// Example usage in _handleNewEmergency():
-  // Replace your _handleNewEmergency() method in emergency_page.dart with this:
 
-  Future<void> _handleNewEmergency(String text) async {
-    final isNepali = _isNepali(text);
 
-    // STEP 1: Use hybrid classifier (keywords + ML)
-    debugPrint("🔍 Classifying intent with hybrid approach...");
-    final intentResult = await widget.hybridClassifier.classifyIntent(text);
-
-    final intent = intentResult["intent"] as String;
-    final confidence = intentResult["confidence"] as double;
-    final method = intentResult["method"] as String;
-
-    debugPrint("✅ Intent: $intent (confidence: ${(confidence * 100).toStringAsFixed(1)}%, method: $method)");
-
-    // TEMPORARY DEBUG - Comment out when done testing
-    _showConfidenceDebug(intentResult);
-
-    // STEP 2: Check if need disambiguation
-    if (confidence < 0.5) {
-      final disambigMsg = widget.hybridClassifier.getDisambiguationMessage(
-        intentResult,
-        isNepali: isNepali,
-      );
-
-      if (disambigMsg.isNotEmpty) {
-        _addBotMessage(disambigMsg, "question");
-        return;
-      }
-    }
-
-    // STEP 3: Check for immediate critical emergency
-    if (EnhancedCriticalDetector.requiresImmediateEmergencyCall(text)) {
-      _addBotMessage(
-        isNepali
-            ? "🚨 गम्भीर आपतकालीन अवस्था!\nतुरुन्त 102/103 मा फोन गर्नुहोस्!"
-            : "🚨 CRITICAL EMERGENCY!\nCALL 102/103 IMMEDIATELY!",
-        "critical",
-      );
-    }
-
-    // STEP 4: Handle unknown intent
-    if (intent == "unknown" || intent.isEmpty) {
-      _addBotMessage(
-        isNepali
-            ? "मलाई बुझिएन। के तपाईं थप विवरण दिन सक्नुहुन्छ?\n\n"
-            "उदाहरण: 'सर्पले टोकेको', 'हात जलेको', 'घाउ लागेको'"
-            : "I couldn't understand. Could you provide more details?\n\n"
-            "Examples: 'snake bite', 'burned hand', 'deep cut'",
-        "question",
-      );
-      return;
-    }
-
-    // STEP 5: IMPORTANT - Set confidence BEFORE starting dialogue
-    // This ensures it's available even if dialogue completes immediately
+// ── _handleNewEmergency ───────────────────────────────────────────────────
+ 
+Future<void> _handleNewEmergency(String text) async {
+  final isNepali = _isNepali(text);
+ 
+  debugPrint("🔍 Classifying with ambiguity check...");
+  final intentResult =
+      await widget.hybridClassifier.classifyWithAmbiguityCheck(text);
+ 
+  final intent     = intentResult["intent"] as String;
+  final confidence = intentResult["confidence"] as double;
+  final needsCtx   = intentResult["needs_context"] as bool? ?? false;
+  final report     = intentResult["ambiguity_report"] as AmbiguityReport?;
+ 
+  // Debug — comment out before release.
+  _showAmbiguityDebug(intentResult);
+ 
+  // ── Unknown intent ──────────────────────────────────────────────────
+  if (intent == "unknown" || intent.isEmpty) {
+    _addBotMessage(
+      isNepali
+          ? "मलाई बुझिएन। थप विवरण दिनुहोस्।\n\n"
+              "उदाहरण: 'सर्पले टोकेको', 'हात जलेको', 'घाउ लागेको'"
+          : "I couldn't understand. Could you describe what happened?\n\n"
+              "Examples: 'snake bit me', 'burned my hand', 'deep cut'",
+      "question",
+    );
+    return;
+  }
+ 
+  // ── Always check for critical signals first ─────────────────────────
+  if (EnhancedCriticalDetector.requiresImmediateEmergencyCall(text)) {
+    _addBotMessage(
+      isNepali
+          ? "🚨 गम्भीर आपतकालीन अवस्था!\nतुरुन्त 102/103 मा फोन गर्नुहोस्!"
+          : "🚨 CRITICAL EMERGENCY!\nCALL 102/103 IMMEDIATELY!",
+      "critical",
+    );
+  }
+ 
+  // ── Keyword hit → skip context, go straight to clinical Q&A ─────────
+  if (!needsCtx) {
+    debugPrint("✅ Keyword path — straight to clinical Q&A for '$intent'");
     _dialogueManager.reset();
-    _dialogueManager.setIntentConfidence(confidence);  // ✅ SET CONFIDENCE FIRST
-
-    // STEP 6: Start dialogue with detected intent
+    _dialogueManager.setIntentConfidence(confidence);
     final responses = _dialogueManager.start(
       intent,
       userText: text,
-      intentConfidence: confidence,  // Pass it here too for redundancy
+      intentConfidence: confidence,
     );
-
-    // STEP 7: Display responses
     for (final msg in responses) {
-      final type = _getMessageType(msg);
-      _addBotMessage(msg, type);
+      _addBotMessage(msg, _getMessageType(msg));
     }
-
-    // STEP 8: Show confidence info for transparency (optional)
-    if (confidence < 0.7) {
-      _addBotMessage(
-        isNepali
-            ? "ℹ️ नोट: मलाई पूर्ण रूपमा पक्का छैन। यदि गलत लाग्यो भने 'नयाँ' भन्नुहोस्।"
-            : "ℹ️ Note: I'm not completely certain. If this seems wrong, say 'new emergency'.",
-        "info",
-      );
-    }
+    return;
   }
+ 
+  // ── ML path → gather context first ──────────────────────────────────
+  // Show what we think it might be, with the confusable alternative if known.
+  final altLabel = report?.alternativeLabel ?? "";
+ 
+  String preamble;
+  if (altLabel.isNotEmpty && altLabel != intent) {
+    preamble = isNepali
+        ? "🤔 '${intent.replaceAll('_', ' ')}' वा '${altLabel.replaceAll('_', ' ')}' जस्तो लाग्छ — पक्का गर्न केही सोध्छु:"
+        : "🤔 Could be '${intent.replaceAll('_', ' ')}' or '${altLabel.replaceAll('_', ' ')}' — let me ask a couple of questions:";
+  } else {
+    preamble = isNepali
+        ? "🤔 '${intent.replaceAll('_', ' ')}' जस्तो लाग्छ — पुष्टि गर्न केही सोध्छु:"
+        : "🤔 Looks like '${intent.replaceAll('_', ' ')}' — let me confirm with a couple of questions:";
+  }
+  _addBotMessage(preamble, "info");
+ 
+  final contextMessages = _dialogueManager.beginContextGathering(
+    originalText    : text,
+    candidateIntent : intent,
+    alternativeIntent: (altLabel.isNotEmpty && altLabel != intent) ? altLabel : null,
+    initialConfidence: confidence,
+    isNepali        : isNepali,
+  );
+ 
+  if (contextMessages.isNotEmpty) {
+    for (final msg in contextMessages) {
+      _addBotMessage(msg, "question");
+    }
+    return;
+  }
+ 
+  // No context questions defined for this intent → go straight to Q&A.
+  _dialogueManager.reset();
+  _dialogueManager.setIntentConfidence(confidence);
+  final responses = _dialogueManager.start(
+    intent,
+    userText: text,
+    intentConfidence: confidence,
+  );
+  for (final msg in responses) {
+    _addBotMessage(msg, _getMessageType(msg));
+  }
+}
+
+
+
+void _showAmbiguityDebug(Map<String, dynamic> result) {
+  final report = result["ambiguity_report"] as AmbiguityReport?;
+  if (report == null) {
+    _addBotMessage(
+      "🔍 Keyword hit: ${result['intent']}  "
+      "${((result['confidence'] as double) * 100).toStringAsFixed(1)}%",
+      "info",
+    );
+    return;
+  }
+  _addBotMessage("🔍 Classification:\n${report.debugSummary}", "info");
+}
+ 
+void _showEnrichmentDebug(Map<String, dynamic> result) {
+  final enriched = result["enriched_text"] as String? ?? "";
+  final before   = result["original_intent"] as String;
+  final after    = result["intent"] as String;
+  final conf     = (result["confidence"] as double) * 100;
+  final changed  = result["intent_changed"] as bool? ?? false;
+ 
+  _addBotMessage(
+    "🔁 Re-classification:\n"
+    "Before : $before\n"
+    "After  : $after  ${conf.toStringAsFixed(1)}%\n"
+    "Changed: $changed\n\n"
+    "Enriched input:\n\"$enriched\"",
+    "info",
+  );
+}
+
+
+
 
   // NEW: Helper to determine message type
   String _getMessageType(String msg) {
@@ -980,8 +1110,6 @@ class _EmergencyModeScreenState extends State<EmergencyModeScreen>
 
 
 // Add this to see detailed confidence breakdown
-
-  // Replace your _buildDisclaimer() method in emergency_page.dart with this:
 
   Widget _buildDisclaimer() {
     return Container(
