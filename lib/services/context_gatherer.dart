@@ -265,7 +265,6 @@ class ContextGatherer {
   }
 
   /// Builds the enriched input string.
-  /// e.g. "My heart is beating fast. current location and activity: at home resting on couch. full symptoms: chest pain and sweating."
   static String buildEnrichedInput({
     required String originalText,
     required List<String> contextKeys,
@@ -273,17 +272,40 @@ class ContextGatherer {
     required bool isNepali,
   }) {
     assert(contextKeys.length == contextValues.length);
-    final buffer = StringBuffer(originalText.trim());
+    String clean(String s) {
+      // Normalize whitespace and strip noisy punctuation that can
+      // destabilize the classifier (e.g. ", ." or "..., ,").
+      var out = s.replaceAll(RegExp(r"\s+"), " ").trim();
+      out = out.replaceAll(RegExp(r"^[\s,.;:]+"), "");
+      out = out.replaceAll(RegExp(r"[\s,.;:]+$"), "");
+      return out.trim();
+    }
+
+    final base = clean(originalText);
+    final buffer = StringBuffer(base);
     for (int i = 0; i < contextKeys.length; i++) {
-      final value = contextValues[i].trim();
+      final key = clean(contextKeys[i]);
+      final value = clean(contextValues[i]);
       if (value.isEmpty) continue;
-      buffer.write('. ');
-      buffer.write(contextKeys[i]);
-      buffer.write(': ');
+
+      // Separator: only add a period if the buffer doesn't already end with one.
+      final current = buffer.toString();
+      if (current.isNotEmpty && !RegExp(r"[.!?]$").hasMatch(current)) {
+        buffer.write('.');
+      }
+      buffer.write(' ');
+
+      // Include a short key label so the model can learn from structure,
+      // but keep it compact and consistent across languages.
+      if (key.isNotEmpty) {
+        buffer.write(key);
+        buffer.write(': ');
+      }
       buffer.write(value);
     }
-    buffer.write('.');
-    return buffer.toString();
+    final finalText = buffer.toString().trim();
+    if (finalText.isEmpty) return "";
+    return RegExp(r"[.!?]$").hasMatch(finalText) ? finalText : '$finalText.';
   }
 
   static bool isConfidenceAcceptable(double confidence) => confidence >= 0.55;
