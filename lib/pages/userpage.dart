@@ -1,30 +1,29 @@
 import 'package:flutter/material.dart';
+import 'package:instant_aid/main.dart';
 import 'package:instant_aid/models/user_model.dart';
 import 'package:instant_aid/pages/edit_profile.dart';
 import 'package:instant_aid/emergency_page.dart';
 import 'package:instant_aid/pages/history_page.dart';
 import 'package:instant_aid/pages/homepage.dart';
-import '../services/hybrid_intent_classifier.dart';  // NEW IMPORT
 import 'package:instant_aid/pages/settings_page.dart';
+import 'package:instant_aid/services/hybrid_intent_classifier.dart';
 import 'package:instant_aid/services/injury_classifier.dart';
 import 'package:instant_aid/services/profile_service.dart';
 import 'package:instant_aid/services/whisper_service.dart';
 
 class UserPage extends StatefulWidget {
   final UserModel user;
-  final HybridIntentClassifier hybridClassifier;
-  const UserPage({super.key, required this.user, required this.hybridClassifier});
+  const UserPage({super.key, required this.user});
 
   @override
   State<UserPage> createState() => _UserPageState();
 }
 
-
 class _UserPageState extends State<UserPage> {
   int _selectedIndex = 0;
-  final InjuryClassifier classifier = InjuryClassifier();
-  final WhisperService whisper = WhisperService();
-  final HybridIntentClassifier hybridClassifier = HybridIntentClassifier(InjuryClassifier());
+  late final InjuryClassifier classifier;
+  late final WhisperService whisper;
+  late final HybridIntentClassifier hybridClassifier;
   String? _imageUrl;
 
   Map<String, dynamic>? profile;
@@ -33,6 +32,9 @@ class _UserPageState extends State<UserPage> {
   @override
   void initState() {
     super.initState();
+    classifier = InjuryClassifier();
+    whisper = WhisperService();
+    hybridClassifier = HybridIntentClassifier(classifier);
     _loadProfile();
   }
 
@@ -51,14 +53,14 @@ class _UserPageState extends State<UserPage> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => HomePage(user: widget.user,hybridClassifier: widget.hybridClassifier ),
+          builder: (context) => HomePage(user: widget.user, hybridClassifier: hybridClassifier),
         ),
       );
     } else if (index == 2) {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => EmergencyModeScreen(classifier: classifier, whisper: whisper, hybridClassifier: widget.hybridClassifier,),
+          builder: (context) => EmergencyModeScreen(classifier: classifier, whisper: whisper, hybridClassifier: hybridClassifier,),
         ),
       );
     }
@@ -147,34 +149,67 @@ class _Header extends StatelessWidget {
         ),
       ),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          CircleAvatar(
-            radius: 55,
-            backgroundImage: (user.avatarUrl != null && user.avatarUrl!.isNotEmpty)
-                ? NetworkImage(user.avatarUrl!)
-                : const NetworkImage("https://encrypted-tbn3.gstatic.com/images?q=tbn:ANd9GcQIy4d7P3mJN5n44jxkUjp24w5W1FF2ro43MBxyZqTV2EOB9hVgw1ZW3m9kFoxqA6TD2AqigsYj")
-            as ImageProvider,
-          ),
-          const SizedBox(height: 10),
-          Text(
-            profile?['full_name'] ?? "User",
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
+          Padding(
+            padding: const EdgeInsets.only(left: 10, right:350, top: 22),
+            child: _circleButton(
+              icon: Icons.arrow_back_ios_new,
+              onTap: () => Navigator.pop(context),
             ),
           ),
-          const SizedBox(height: 5),
-          Text(
-            profile?['email'] ?? "No email",
-            style: const TextStyle(color: Colors.white70, fontSize: 16),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              CircleAvatar(
+                radius: 55,
+                backgroundImage: (user.avatarUrl != null && user.avatarUrl!.isNotEmpty)
+                    ? NetworkImage(user.avatarUrl!)
+                    : const NetworkImage("https://encrypted-tbn3.gstatic.com/images?q=tbn:ANd9GcQIy4d7P3mJN5n44jxkUjp24w5W1FF2ro43MBxyZqTV2EOB9hVgw1ZW3m9kFoxqA6TD2AqigsYj")
+                as ImageProvider,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                profile?['full_name'] ?? "User",
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                profile?['email'] ?? "No email",
+                style: const TextStyle(color: Colors.white70, fontSize: 16),
+              ),
+              const SizedBox(height: 20),
+            ],
           ),
-          const SizedBox(height: 20),
         ],
       ),
     );
   }
+}
+
+Widget _circleButton({required IconData icon, required VoidCallback onTap}) {
+  return GestureDetector(
+    onTap: onTap,
+    child: Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: Colors.blue.withValues(alpha: 0.3),
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Icon(icon, size: 20, color: Colors.black87),
+    ),
+  );
 }
 
 class _InfoCard extends StatelessWidget {

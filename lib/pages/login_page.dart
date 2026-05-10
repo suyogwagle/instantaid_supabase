@@ -71,7 +71,7 @@ class _LoginPageState extends State<LoginPage> {
         if (!mounted) return;
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => HomePage(user: userModel, hybridClassifier: widget.hybridClassifier)),
+          MaterialPageRoute(builder: (_) => HomePage(user: userModel, hybridClassifier: widget.hybridClassifier)),// hybridClassifier: widget.hybridClassifier
         );
       } else {
         // REGISTER

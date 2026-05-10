@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:instant_aid/services/progress_service.dart';
+import 'package:instant_aid/services/quiz_service.dart';
+import 'package:provider/provider.dart';
 import 'package:instant_aid/config/constants.dart';
 import 'package:instant_aid/pages/homepage.dart';
 import 'package:instant_aid/models/user_model.dart';
@@ -13,7 +16,6 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Supabase
   await Supabase.initialize(
     url: AppConstants.supabaseUrl,
     anonKey: AppConstants.supabaseAnonKey,
@@ -21,49 +23,58 @@ Future<void> main() async {
 
   supabase.auth.onAuthStateChange.listen((data) {
     final event = data.event;
-
     if (event == AuthChangeEvent.signedOut) {
       navigatorKey.currentState?.pushNamedAndRemoveUntil('/login', (route) => false);
     }
-
     if (event == AuthChangeEvent.signedIn) {
       navigatorKey.currentState?.pushNamedAndRemoveUntil('/home', (route) => false);
     }
   });
 
-  // Preload classifier once
   debugPrint("🔄 Loading AI models...");
   final classifier = InjuryClassifier();
   await classifier.loadModel();
   debugPrint("✅ InjuryClassifier loaded");
 
-  // NEW: Create hybrid classifier wrapper
   final hybridClassifier = HybridIntentClassifier(classifier);
   debugPrint("✅ HybridIntentClassifier ready");
 
-  // Preload Whisper offline model once
   final whisper = WhisperService();
   await whisper.initModel();
   debugPrint("✅ WhisperService loaded");
 
-  runApp(MyApp(
-    classifier: classifier,
-    hybridClassifier: hybridClassifier,
-    whisper: whisper,
-  ));
+  runApp(
+    MultiProvider(
+      providers: [
+        // QuizService — fetches quiz questions from Supabase
+        Provider<QuizService>(
+          create: (_) => QuizService(Supabase.instance.client),
+        ),
+        // ProgressService — tracks lesson completion and gates quiz access
+        Provider<ProgressService>(
+          create: (_) => ProgressService(Supabase.instance.client),
+        ),
+      ],
+      child: MyApp(
+        classifier: classifier,
+        hybridClassifier: hybridClassifier,
+        whisper: whisper,
+      ),
+    ),
+  );
 }
 
 final supabase = Supabase.instance.client;
 
 class MyApp extends StatelessWidget {
   final InjuryClassifier classifier;
-  final HybridIntentClassifier hybridClassifier;  // NEW
+  final HybridIntentClassifier hybridClassifier;
   final WhisperService whisper;
 
   const MyApp({
     super.key,
     required this.classifier,
-    required this.hybridClassifier,  // NEW
+    required this.hybridClassifier,
     required this.whisper,
   });
 
@@ -101,9 +112,7 @@ class MyApp extends StatelessWidget {
             future: _getCurrentUser(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Scaffold(
-                  body: Center(child: CircularProgressIndicator()),
-                );
+                return const Scaffold(body: Center(child: CircularProgressIndicator()));
               }
               if (!snapshot.hasData) {
                 return LoginPage(classifier: classifier, whisper: whisper, hybridClassifier: hybridClassifier);
@@ -118,9 +127,7 @@ class MyApp extends StatelessWidget {
         future: _getCurrentUser(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
+            return const Scaffold(body: Center(child: CircularProgressIndicator()));
           }
           if (!snapshot.hasData) {
             return LoginPage(classifier: classifier, whisper: whisper, hybridClassifier: hybridClassifier);
