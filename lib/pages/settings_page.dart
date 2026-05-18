@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:instant_aid/models/user_model.dart';
+import 'package:instant_aid/pages/userpage.dart';
 
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key});
+  final UserModel user;
+  const SettingsPage({super.key,required this.user});
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -54,7 +57,10 @@ class _SettingsPageState extends State<SettingsPage> {
             title: const Text("Profile"),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
             onTap: () {
-              // Navigate to profile page
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => UserPage(user: widget.user)),
+              );
             },
           ),
           ListTile(

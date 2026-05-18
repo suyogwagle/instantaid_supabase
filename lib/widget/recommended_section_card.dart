@@ -1,10 +1,28 @@
 import 'package:flutter/material.dart';
 
+// Design tokens (mirrors app theme)
+class _C {
+  static const teal      = Color(0xFF00897B);
+  static const tealFaint = Color(0xFFE0F2F1);
+  static const tealLight = Color(0xFFB2DFDB);
+  static const textPri   = Color(0xFF0A1628);
+  static const textSec   = Color(0xFF64748B);
+  static const divider   = Color(0xFFECEFF4);
+  static const blue      = Color(0xFF1565C0);
+  static const surface   = Colors.white;
+
+  static List<BoxShadow> shadow = [
+    const BoxShadow(color: Color(0x0F000000), blurRadius: 12, offset: Offset(0, 4)),
+  ];
+}
+
 class RecommendedSectionCard extends StatelessWidget {
   final int categoryId;
   final String categoryName;
   final String imageUrl;
   final int chaptersRemaining;
+  final double progress;        // 0.0 – 1.0; defaults to 0 if not supplied
+  final String? emoji;
   final VoidCallback? onTap;
 
   const RecommendedSectionCard({
@@ -13,112 +31,114 @@ class RecommendedSectionCard extends StatelessWidget {
     required this.categoryName,
     required this.imageUrl,
     required this.chaptersRemaining,
+    this.progress = 0.0,
+    this.emoji,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final pct    = (progress * 100).round();
+    final isDone = pct == 100;
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 16, top: 8),
+        margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          color: _C.surface,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: _C.shadow,
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Stack(
-            children: [
-              // Background Image
-              Image.network(
-                imageUrl,
-                height: 180,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    height: 180,
-                    color: Colors.grey[300],
-                    child: const Center(
-                      child: Icon(Icons.medical_services, size: 60, color: Colors.grey),
+        child: Row(
+          children: [
+            // ── Thumbnail ────────────────────────────────────────────────
+            ClipRRect(
+              borderRadius: const BorderRadius.horizontal(left: Radius.circular(20)),
+              child: SizedBox(
+                width: 90,
+                height: 90,
+                child: Image.network(
+                  imageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: _C.tealFaint,
+                    child: Center(
+                      child: Text(
+                        emoji ?? '📖',
+                        style: const TextStyle(fontSize: 28),
+                      ),
                     ),
-                  );
-                },
-              ),
-
-              // Gradient Overlay
-              Container(
-                height: 180,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.7),
-                    ],
                   ),
                 ),
               ),
+            ),
 
-              // Content
-              Positioned(
-                bottom: 16,
-                left: 16,
-                right: 16,
+            // ── Info ─────────────────────────────────────────────────────
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       categoryName,
                       style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: _C.textPri,
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Text(
-                          '$chaptersRemaining ${chaptersRemaining == 1 ? 'lesson' : 'lessons'}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                          ),
+                    Text(
+                      '$chaptersRemaining ${chaptersRemaining == 1 ? 'lesson' : 'lessons'}',
+                      style: const TextStyle(fontSize: 12, color: _C.textSec),
+                    ),
+                    const SizedBox(height: 10),
+                    // Progress bar
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 5,
+                        backgroundColor: _C.divider,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          isDone ? _C.teal : _C.blue,
                         ),
-                      ],
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      isDone ? 'Complete ✓' : '$pct% complete',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: isDone ? _C.teal : _C.textSec,
+                      ),
                     ),
                   ],
                 ),
               ),
+            ),
 
-              // Play/Arrow Icon
-              Positioned(
-                top: 16,
-                right: 16,
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.9),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.arrow_forward,
-                    color: Colors.black87,
-                    size: 24,
-                  ),
+            // ── Arrow ────────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.only(right: 14),
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: _C.tealFaint,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  size: 14,
+                  color: _C.teal,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

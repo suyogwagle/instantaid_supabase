@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:instant_aid/services/injury_classifier.dart';
 import 'package:instant_aid/services/whisper_service.dart';
 import 'package:instant_aid/services/hybrid_intent_classifier.dart';
+import 'package:app_links/app_links.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -19,7 +20,26 @@ Future<void> main() async {
   await Supabase.initialize(
     url: AppConstants.supabaseUrl,
     anonKey: AppConstants.supabaseAnonKey,
+    authOptions: const FlutterAuthClientOptions(
+      authFlowType: AuthFlowType.pkce,
+      detectSessionInUri: true,
+    ),
   );
+
+  // Handle deep link when app is already open and email link is clicked
+  final appLinks = AppLinks();
+  appLinks.uriLinkStream.listen((uri) {
+    if (uri.toString().contains('login-callback')) {
+      Supabase.instance.client.auth.getSessionFromUrl(uri);
+    }
+  });
+
+  // Handle deep link when app was fully closed and opened via email link
+  final initialUri = await appLinks.getInitialLink();
+  if (initialUri != null &&
+      initialUri.toString().contains('login-callback')) {
+    await Supabase.instance.client.auth.getSessionFromUrl(initialUri);
+  }
 
   supabase.auth.onAuthStateChange.listen((data) {
     final event = data.event;
@@ -46,11 +66,9 @@ Future<void> main() async {
   runApp(
     MultiProvider(
       providers: [
-        // QuizService — fetches quiz questions from Supabase
         Provider<QuizService>(
           create: (_) => QuizService(Supabase.instance.client),
         ),
-        // ProgressService — tracks lesson completion and gates quiz access
         Provider<ProgressService>(
           create: (_) => ProgressService(Supabase.instance.client),
         ),
@@ -66,7 +84,8 @@ Future<void> main() async {
 
 final supabase = Supabase.instance.client;
 
-class MyApp extends StatelessWidget {
+// Converted to StatefulWidget to support WidgetsBindingObserver
+class MyApp extends StatefulWidget {
   final InjuryClassifier classifier;
   final HybridIntentClassifier hybridClassifier;
   final WhisperService whisper;
@@ -77,6 +96,32 @@ class MyApp extends StatelessWidget {
     required this.hybridClassifier,
     required this.whisper,
   });
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.detached) {
+      // App is being killed — sign out automatically
+      Supabase.instance.client.auth.signOut();
+    }
+  }
 
   Future<UserModel?> _getCurrentUser() async {
     final session = supabase.auth.currentSession;
@@ -103,9 +148,9 @@ class MyApp extends StatelessWidget {
 
       routes: {
         '/login': (context) => LoginPage(
-          classifier: classifier,
-          whisper: whisper,
-          hybridClassifier: hybridClassifier,
+          classifier: widget.classifier,
+          whisper: widget.whisper,
+          hybridClassifier: widget.hybridClassifier,
         ),
         '/home': (context) {
           return FutureBuilder<UserModel?>(
@@ -115,9 +160,13 @@ class MyApp extends StatelessWidget {
                 return const Scaffold(body: Center(child: CircularProgressIndicator()));
               }
               if (!snapshot.hasData) {
-                return LoginPage(classifier: classifier, whisper: whisper, hybridClassifier: hybridClassifier);
+                return LoginPage(
+                  classifier: widget.classifier,
+                  whisper: widget.whisper,
+                  hybridClassifier: widget.hybridClassifier,
+                );
               }
-              return HomePage(user: snapshot.data!, hybridClassifier: hybridClassifier);
+              return HomePage(user: snapshot.data!, hybridClassifier: widget.hybridClassifier);
             },
           );
         },
@@ -130,9 +179,13 @@ class MyApp extends StatelessWidget {
             return const Scaffold(body: Center(child: CircularProgressIndicator()));
           }
           if (!snapshot.hasData) {
-            return LoginPage(classifier: classifier, whisper: whisper, hybridClassifier: hybridClassifier);
+            return LoginPage(
+              classifier: widget.classifier,
+              whisper: widget.whisper,
+              hybridClassifier: widget.hybridClassifier,
+            );
           }
-          return HomePage(user: snapshot.data!, hybridClassifier: hybridClassifier);
+          return HomePage(user: snapshot.data!, hybridClassifier: widget.hybridClassifier);
         },
       ),
     );

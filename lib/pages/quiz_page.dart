@@ -202,8 +202,9 @@ class _QuizPageState extends State<QuizPage> {
         return QuizResultScreen(
           key:      const ValueKey('result'),
           onRetry:  _startQuiz,
-          onReview: ctrl.result?.wrongAnswers.isNotEmpty == true ? () => ctrl.showReview() : null,
-          onExit:   () => Navigator.pop(context),
+          onReview: (ctrl.result != null && ctrl.result!.wrongAnswers.isNotEmpty)
+              ? () => ctrl.showReview()
+              : null,          onExit:   () => Navigator.pop(context),
         );
       case QuizPhase.reviewing:
         return QuizReviewScreen(

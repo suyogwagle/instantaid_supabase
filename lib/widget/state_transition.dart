@@ -146,7 +146,7 @@ class AnimatedTrainingProgress extends StatelessWidget {
                   ),
                   circularStrokeCap: CircularStrokeCap.round,
                   progressColor: Colors.blueAccent,
-                  backgroundColor: Colors.grey[300]!,
+                  backgroundColor: Color(0xFF006DBF).withValues(alpha: 0.1),
                 ),
                 const SizedBox(width: 20),
                 Expanded(

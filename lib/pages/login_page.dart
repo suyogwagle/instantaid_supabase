@@ -61,7 +61,7 @@ class _LoginPageState extends State<LoginPage> {
 
         if (profile == null) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Profile not found.")),
+            const SnackBar(content: Text("Profile not found. Please register first!")),
           );
           return;
         }
