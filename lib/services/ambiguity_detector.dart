@@ -12,8 +12,6 @@ class AmbiguityDetector {
 
   // ── Thresholds ──────────────────────────────────────────────────────────
 
-  /// Gap between top-1 and top-2 below this → ambiguous.
-  /// 88pp gap is NOT ambiguous — but 15pp is.
   static const double gapThreshold = 0.15;
 
   /// Absolute confidence floor regardless of gap.
@@ -158,13 +156,17 @@ class AmbiguityDetector {
 
   // ── Private helpers ─────────────────────────────────────────────────────
 
+  /// True when [label] has signature patterns defined and at least one matches [text].
+  static bool hasSignatureKeywords(String label, String text) {
+    final patterns = _signatureKeywords[label];
+    if (patterns == null) return false;
+    return patterns.any((p) => p.hasMatch(text));
+  }
+
   static bool _signatureKeywordMissing(String label, String text) {
     final patterns = _signatureKeywords[label];
     if (patterns == null) return false;
-    for (final p in patterns) {
-      if (p.hasMatch(text)) return false;
-    }
-    return true;
+    return !hasSignatureKeywords(label, text);
   }
 }
 

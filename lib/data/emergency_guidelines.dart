@@ -32,7 +32,7 @@ const Map<String, Map<String, dynamic>> emergencyGuidelines = {
   "burn": {
     "source_orgs": "Red Cross, American Burn Association, WHO",
     "questions": [
-      "Is the person unconscious, having trouble breathing, or is the burn large/deep or on the face/hands/genitals?",
+      "Is the person unconscious or having trouble breathing?",
       "Are there blisters or charred (blackened) skin?",
       "Is it a small superficial burn (red skin only, no blisters)?"
     ],

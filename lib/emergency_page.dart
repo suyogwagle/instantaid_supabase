@@ -11,6 +11,8 @@ import '../services/ambiguity_detector.dart';
 import '../services/hybrid_intent_classifier.dart';  // NEW IMPORT
 import '../services/image_classifier.dart';
 import '../services/dialogue_manager.dart';
+import '../services/context_gatherer.dart';
+import '../services/bot_message_type.dart';
 import '../services/emergency_severity.dart';  // NEW IMPORT
 import '../services/tts_service.dart';
 import '../data/emergency_guidelines.dart';
@@ -188,7 +190,17 @@ class _EmergencyModeScreenState extends State<EmergencyModeScreen>
       }
 
       final result = _imageClassifier.classifyDebug(decodedImage);
-      debugPrint('📸 Classification: ${result['label']}, Confidence: ${result['confidence']}');
+
+      print(
+          '💡 FINAL IMAGE PIPELINE: '
+          '${result['total_ms']}ms',
+      );
+
+      // debugPrint(
+      //   '📸 Classification: '
+      //   '${result['label']}, '
+      //   'Confidence: ${result['confidence']}',
+      // );
 
       _addUserMessage("📷 Sent an image", image: imageFile);
 
@@ -201,8 +213,8 @@ class _EmergencyModeScreenState extends State<EmergencyModeScreen>
 
         if (intent == null ) {
           _addBotMessage(
-            "✅ Image Analysis:\nDetected: ${label.replaceAll('_', ' ').toUpperCase()}\n"
-                "Confidence: ${(confidence * 100).toStringAsFixed(1)}%\n\n"
+            " Image Analysis:\nDetected: ${label.replaceAll('_', ' ').toUpperCase()}\n"
+                // "Confidence: ${(confidence * 100).toStringAsFixed(1)}%\n\n"
                 "I couldn't classify this injury type. Please:\n"
                 "• Describe the injury in text, or\n"
                 "• Send a clearer, well-lit image focusing on the injury",
@@ -210,9 +222,7 @@ class _EmergencyModeScreenState extends State<EmergencyModeScreen>
           );
         } else {
           _addBotMessage(
-            "📸 Image Analysis:\nDetected: ${label.replaceAll('_', ' ').toUpperCase()}\n"
-                "Confidence: ${(confidence * 100).toStringAsFixed(1)}%\n\n"
-                "Starting first aid guidance...",
+            "📸 Image Analysis:",
             "intro",
           );
 
@@ -239,7 +249,7 @@ class _EmergencyModeScreenState extends State<EmergencyModeScreen>
 
       setState(() => _isProcessingImage = false);
     } catch (e) {
-      _addBotMessage("❌ Error processing image: $e", "warning");
+      _addBotMessage(" Error processing image: $e", "warning");
       setState(() => _isProcessingImage = false);
     }
   }
@@ -280,71 +290,63 @@ Future<void> _sendMessage(String text) async {
     // ── Context-gathering phase ─────────────────────────────────────────
     if (_dialogueManager.isGatheringContext) {
       final result = _dialogueManager.supplyContextAnswer(text, isNepali);
- 
-      if (!result.isDone) {
-        // More context questions to ask.
-        if (result.nextQuestion != null) {
-          _addBotMessage(result.nextQuestion!, "question");
-        }
+
+      if (!result.needsPartialReclassification) {
         setState(() => _isProcessingText = false);
         return;
       }
- 
-      // All context collected → re-classify on enriched string.
+
+      final enrichedResult = await widget.hybridClassifier.classifyWithContext(
+        originalText   : result.originalText!,
+        candidateIntent: result.candidateIntent!,
+        contextKeys    : result.contextKeys!,
+        contextValues  : result.contextValues!,
+        isNepali       : isNepali,
+      );
+
+      final enrichedText = enrichedResult["enriched_text"] as String? ?? "";
+      final top1Label = enrichedResult["intent"] as String;
+      final top1Conf = enrichedResult["confidence"] as double;
+      final top2Conf =
+          enrichedResult["top2_confidence"] as double? ?? 0.0;
+      final gap = top1Conf - top2Conf;
+
+      final shouldExit = ContextGatherer.shouldExitContextGathering(
+        top1Label         : top1Label,
+        top1Confidence    : top1Conf,
+        gap               : gap,
+        enrichedText      : enrichedText,
+        candidateIntent   : result.candidateIntent!,
+        alternativeIntent : result.alternativeIntent,
+      );
+
+      if (shouldExit) {
+        _dialogueManager.skipRemainingContextQuestions();
+        await _completeContextGathering(
+          enrichedResult: enrichedResult,
+          isNepali       : isNepali,
+        );
+        setState(() => _isProcessingText = false);
+        return;
+      }
+
+      if (result.pendingNextQuestion != null) {
+        _addBotMessage(result.pendingNextQuestion!, "question");
+        setState(() => _isProcessingText = false);
+        return;
+      }
+
+      // All scheduled questions answered; still ambiguous — confirm with last ML pass.
       _addBotMessage(
         isNepali
             ? "🔁 थप जानकारीका आधारमा पुनः विश्लेषण गर्दैछु..."
             : "🔁 Re-analysing with your context...",
         "intro",
       );
- 
-      final enrichedResult = await widget.hybridClassifier.classifyWithContext(
-        originalText  : result.originalText!,
-        candidateIntent: result.candidateIntent!,
-        contextKeys   : result.contextKeys!,
-        contextValues : result.contextValues!,
-        isNepali      : isNepali,
+      await _completeContextGathering(
+        enrichedResult: enrichedResult,
+        isNepali       : isNepali,
       );
- 
-      final confirmedIntent = enrichedResult["intent"] as String;
-      final confirmedConf   = enrichedResult["confidence"] as double;
-      final intentChanged   = enrichedResult["intent_changed"] as bool? ?? false;
- 
-      // Debug — comment out before release.
-      _showEnrichmentDebug(enrichedResult);
- 
-      if (confirmedIntent == "unknown" || confirmedIntent.isEmpty) {
-        _addBotMessage(
-          isNepali
-              ? "❓ अझै बुझिएन। कृपया सिधा बताउनुहोस् — के भयो?"
-              : "❓ Still unclear. Please describe directly — what happened?",
-          "question",
-        );
-        _dialogueManager.reset();
-        setState(() => _isProcessingText = false);
-        return;
-      }
- 
-      if (intentChanged) {
-        final oldLabel = result.candidateIntent!.replaceAll('_', ' ').toUpperCase();
-        final newLabel = confirmedIntent.replaceAll('_', ' ').toUpperCase();
-        _addBotMessage(
-          isNepali
-              ? "🔄 सुधारिएको: $oldLabel → $newLabel"
-              : "🔄 Updated based on your context: $oldLabel → $newLabel",
-          "info",
-        );
-      }
- 
-      final responses = _dialogueManager.confirmIntentAfterContext(
-        confirmedIntent    : confirmedIntent,
-        confirmedConfidence: confirmedConf,
-        isNepali           : isNepali,
-      );
-      for (final msg in responses) {
-        _addBotMessage(msg, _getMessageType(msg));
-      }
- 
       setState(() => _isProcessingText = false);
       return;
     }
@@ -423,8 +425,38 @@ Future<void> _sendMessage(String text) async {
 
 
 
+// ── Finish context gathering after partial or full re-classification ─────
+
+Future<void> _completeContextGathering({
+  required Map<String, dynamic> enrichedResult,
+  required bool isNepali,
+}) async {
+  final confirmedIntent = enrichedResult["intent"] as String;
+  final confirmedConf = enrichedResult["confidence"] as double;
+
+  if (confirmedIntent == "unknown" || confirmedIntent.isEmpty) {
+    _addBotMessage(
+      isNepali
+          ? "❓ अझै बुझिएन। कृपया सिधा बताउनुहोस् — के भयो?"
+          : "❓ Still unclear. Please describe directly — what happened?",
+      "question",
+    );
+    _dialogueManager.reset();
+    return;
+  }
+
+  final responses = _dialogueManager.confirmIntentAfterContext(
+    confirmedIntent    : confirmedIntent,
+    confirmedConfidence: confirmedConf,
+    isNepali           : isNepali,
+  );
+  for (final msg in responses) {
+    _addBotMessage(msg, _getMessageType(msg));
+  }
+}
+
 // ── _handleNewEmergency ───────────────────────────────────────────────────
- 
+
 Future<void> _handleNewEmergency(String text) async {
   final isNepali = _isNepali(text);
  
@@ -438,7 +470,7 @@ Future<void> _handleNewEmergency(String text) async {
   final report     = intentResult["ambiguity_report"] as AmbiguityReport?;
  
   // Debug — comment out before release.
-  _showAmbiguityDebug(intentResult);
+  // _showAmbiguityDebug(intentResult);
  
   // ── Unknown intent ──────────────────────────────────────────────────
   if (intent == "unknown" || intent.isEmpty) {
@@ -558,23 +590,7 @@ void _showEnrichmentDebug(Map<String, dynamic> result) {
 
 
 
-  // NEW: Helper to determine message type
-  String _getMessageType(String msg) {
-    if (msg.contains("CRITICAL") || msg.contains("गम्भीर")) {
-      return "critical";
-    }
-    if (msg.contains("FIRST AID") || msg.contains("IMMEDIATE ACTION") ||
-        msg.contains("तुरुन्त गर्नुपर्ने")) {
-      return "steps";
-    }
-    if (msg.contains("⚠️") || msg.contains("WARNING")) {
-      return "warning";
-    }
-    if (msg.contains("?") || msg.contains("के")) {
-      return "question";
-    }
-    return "intro";
-  }
+  String _getMessageType(String msg) => BotMessageType.infer(msg);
 
   bool _isNepali(String text) {
     return RegExp(r"[अ-ह]").hasMatch(text) ||

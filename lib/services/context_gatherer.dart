@@ -1,6 +1,8 @@
 // lib/services/context_gatherer.dart
 //
 // ALL questions are open-ended — no yes/no.
+
+import 'ambiguity_detector.dart';
 // The user's free-text answer becomes a rich phrase that the model
 // can actually learn from when concatenated to the original input.
 //
@@ -39,7 +41,7 @@ class ContextGatherer {
 
   static const Map<String, List<ContextQuestion>> _questionBank = {
 
-    // ── cardiac_attack ── confusable with: altitude_sickness, anxiety ──────
+    // ── cardiac_attack ── confusable with: altitude_sickness ──────
     "cardiac_attack": [
       ContextQuestion(
         questionEn: "Where are you right now, and what were you doing when this started?",
@@ -186,10 +188,10 @@ class ContextGatherer {
     // ── electric_shock ── confusable with: burn ─────────────────────────────
     "electric_shock": [
       ContextQuestion(
-        questionEn: "Describe what happened — what did the person touch or come near?",
-        questionNp: "के भयो बताउनुहोस् — व्यक्तिले के छोयो वा नजिक गए?",
-        contextKeyEn: "shock incident description",
-        contextKeyNp: "झटकाको घटनाको विवरण",
+        questionEn: "What was the electric source — outlet, wire, appliance, or power line?",
+        questionNp: "बिजुलीको स्रोत के थियो — प्लग, तार, उपकरण, वा लाइन?",
+        contextKeyEn: "electric source",
+        contextKeyNp: "बिजुलीको स्रोत",
       ),
       ContextQuestion(
         questionEn: "Describe the person's condition right now — conscious, breathing, any burns?",
@@ -226,6 +228,47 @@ class ContextGatherer {
     ],
   };
 
+  /// One discriminating question per medically confusable pair (sorted key).
+  static const Map<String, ContextQuestion> _pairDisambiguationQuestions = {
+    "burn|electric_shock": ContextQuestion(
+      questionEn:
+          "Was this from heat, fire, or a hot surface — or from electricity (wire, outlet, appliance)?",
+      questionNp:
+          "यो तातो/आगो/तातो सतहबाट भयो — वा बिजुलीबाट (तार, प्लग, उपकरण)?",
+      contextKeyEn: "injury mechanism",
+      contextKeyNp: "चोटको कारण",
+    ),
+    "cardiac_attack|altitude_sickness": ContextQuestion(
+      questionEn:
+          "Are you at high altitude or in the mountains — or at normal elevation with chest symptoms?",
+      questionNp:
+          "तपाईं उचाइ/पहाडमा हुनुहुन्छ — वा सामान्य उचाइमा छातीको लक्षण?",
+      contextKeyEn: "location and elevation",
+      contextKeyNp: "स्थान र उचाइ",
+    ),
+    "road_accident|wound": ContextQuestion(
+      questionEn:
+          "Was this from a vehicle crash or collision — or another type of injury?",
+      questionNp:
+          "यो सवारी/ठोक्किने दुर्घटनाबाट भयो — वा अर्को प्रकारको चोट?",
+      contextKeyEn: "injury mechanism",
+      contextKeyNp: "चोटको कारण",
+    ),
+    "allergic_reaction|choking": ContextQuestion(
+      questionEn:
+          "Did something block the airway while eating — or a reaction after food, sting, or contact?",
+      questionNp:
+          "खाँदा घाँटी अड्कियो — वा खाना/टोकाइ/सम्पर्कपछि प्रतिक्रिया?",
+      contextKeyEn: "airway vs reaction trigger",
+      contextKeyNp: "घाँटी वा प्रतिक्रियाको कारण",
+    ),
+  };
+
+  static String _pairKey(String a, String b) {
+    final sorted = [a, b]..sort();
+    return '${sorted[0]}|${sorted[1]}';
+  }
+
   // ── Public API ────────────────────────────────────────────────────────────
 
   static List<ContextQuestion> getQuestionsFor(String intent) {
@@ -233,14 +276,12 @@ class ContextGatherer {
     return questions.take(maxContextRounds).toList();
   }
 
-  /// Returns a blended set of context questions for a primary intent and an
-  /// optional confusable alternative intent.
+  /// Returns context questions for a primary intent and optional confusable alt.
   ///
   /// Policy:
-  /// - If no alternative is provided (or it's the same as primary), behave like
-  ///   [getQuestionsFor].
-  /// - If both have questions, prefer asking one from each (up to
-  ///   [maxContextRounds]) so the enriched input captures distinguishing tokens.
+  /// - Same/no alternative → [getQuestionsFor] (primary Q1 + Q2).
+  /// - Known pair → one pair-specific disambiguation Q, then primary Q2 if any.
+  /// - Unknown pair → primary Q1 + Q2 (never alt Q1, avoids redundant mechanism).
   static List<ContextQuestion> getQuestionsForPair({
     required String primaryIntent,
     String? alternativeIntent,
@@ -250,18 +291,57 @@ class ContextGatherer {
     }
 
     final primary = _questionBank[primaryIntent] ?? const <ContextQuestion>[];
-    final alt = _questionBank[alternativeIntent] ?? const <ContextQuestion>[];
+    final pairQ = _pairDisambiguationQuestions[
+        _pairKey(primaryIntent, alternativeIntent)];
 
-    if (primary.isEmpty && alt.isEmpty) return [];
-    if (primary.isEmpty) return alt.take(maxContextRounds).toList();
-    if (alt.isEmpty) return primary.take(maxContextRounds).toList();
-
-    final combined = <ContextQuestion>[];
-    combined.add(primary.first);
-    if (combined.length < maxContextRounds) {
-      combined.add(alt.first);
+    if (pairQ != null) {
+      final combined = <ContextQuestion>[pairQ];
+      if (primary.length > 1 && combined.length < maxContextRounds) {
+        combined.add(primary[1]);
+      }
+      return combined.take(maxContextRounds).toList();
     }
-    return combined.take(maxContextRounds).toList();
+
+    if (primary.isEmpty) {
+      final alt = _questionBank[alternativeIntent] ?? const <ContextQuestion>[];
+      return alt.take(maxContextRounds).toList();
+    }
+    return primary.take(maxContextRounds).toList();
+  }
+
+  /// True when enough context was collected to stop asking more questions.
+  static bool shouldExitContextGathering({
+    required String top1Label,
+    required double top1Confidence,
+    required double gap,
+    required String enrichedText,
+    required String candidateIntent,
+    String? alternativeIntent,
+  }) {
+    final alt = alternativeIntent;
+    final hasConfusableAlt =
+        alt != null && alt.isNotEmpty && alt != candidateIntent;
+
+    // Confident enough with clear separation from runner-up.
+    if (isConfidenceAcceptable(top1Confidence) &&
+        gap >= AmbiguityDetector.gapThreshold) {
+      return true;
+    }
+
+    // Pair resolved: signatures favor top1, not the confusable alternative.
+    if (hasConfusableAlt) {
+      final top1Sig = AmbiguityDetector.hasSignatureKeywords(top1Label, enrichedText);
+      final altSig = AmbiguityDetector.hasSignatureKeywords(alt, enrichedText);
+      if (top1Sig && !altSig) return true;
+    }
+
+    // Re-classification moved to a better-supported intent.
+    if (top1Label != candidateIntent &&
+        AmbiguityDetector.hasSignatureKeywords(top1Label, enrichedText)) {
+      return true;
+    }
+
+    return false;
   }
 
   /// Builds the enriched input string.

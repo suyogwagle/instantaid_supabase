@@ -4,14 +4,16 @@ import 'package:image/image.dart' as img;
 
 class ImageClassifier {
   late Interpreter _interpreter;
+
   bool _isModelLoaded = false;
+
   final double confidenceThreshold = 0.90;
 
-  // Class order from training: ['burns', 'snakebites', 'wounds']
+  // Class order from training
   final List<String> labels = [
     'burns',
     'snakebites',
-    'wounds'
+    'wounds',
   ];
 
   final Map<String, String> labelMapping = {
@@ -20,103 +22,321 @@ class ImageClassifier {
     'wounds': 'wound',
   };
 
-  // Load the TFLite model
-  Future<bool> loadModel({String assetPath = 'assets/injury_classifier.tflite'}) async {
+  // ─────────────────────────────────────────────
+  // LOAD MODEL
+  // ─────────────────────────────────────────────
+
+  Future<bool> loadModel({
+    String assetPath = 'assets/injury_classifier.tflite',
+  }) async {
     try {
-      _interpreter = await Interpreter.fromAsset(assetPath);
+      _interpreter = await Interpreter.fromAsset(
+        assetPath,
+      );
+
       _isModelLoaded = true;
+
       print('✓ Image classifier loaded successfully');
-      print('Input shape: ${_interpreter.getInputTensor(0).shape}');
-      print('Output shape: ${_interpreter.getOutputTensor(0).shape}');
+
+      print(
+        'Input shape: '
+        '${_interpreter.getInputTensor(0).shape}',
+      );
+
+      print(
+        'Output shape: '
+        '${_interpreter.getOutputTensor(0).shape}',
+      );
+
       return true;
     } catch (e) {
-      print('❌ Error loading image classifier: $e');
+      print(
+        '❌ Error loading image classifier: $e',
+      );
+
       _isModelLoaded = false;
+
       return false;
     }
   }
 
-  /// Main classification function
-  Map<String, dynamic> classify(img.Image image) {
+  // ─────────────────────────────────────────────
+  // MAIN CLASSIFICATION
+  // ─────────────────────────────────────────────
+
+  Map<String, dynamic> classify(
+    img.Image image,
+  ) {
     if (!_isModelLoaded) {
-      throw Exception('Model not loaded. Call loadModel() first.');
+      throw Exception(
+        'Model not loaded. Call loadModel() first.',
+      );
     }
 
     try {
-      // Preprocess the image
-      Float32List input = _preprocessImage(image);
+      Float32List input =
+          _preprocessImage(image);
 
-      // Reshape input: [1, 224, 224, 3]
-      var inputReshaped = input.reshape([1, 224, 224, 3]);
+      var inputReshaped = input.reshape([
+        1,
+        224,
+        224,
+        3,
+      ]);
 
-      // Prepare output buffer
-      var output = List.filled(1 * labels.length, 0.0).reshape([1, labels.length]);
+      var output = List.generate(
+        1,
+        (_) => List.filled(labels.length, 0.0),
+      );
 
-      // Run inference
-      _interpreter.run(inputReshaped, output);
+      _interpreter.run(
+        inputReshaped,
+        output,
+      );
 
-      // Get probabilities
-      List<double> probabilities = output[0];
+      List<double> probabilities =
+          List<double>.from(output[0]);
 
-      // Find highest probability
-      double maxConfidence = probabilities.reduce((a, b) => a > b ? a : b);
-      int maxIndex = probabilities.indexOf(maxConfidence);
+      double maxConfidence =
+          probabilities.reduce(
+        (a, b) => a > b ? a : b,
+      );
 
-      // Create map of all probabilities
-      Map<String, double> allProbabilities = {};
-      for (int i = 0; i < labels.length; i++) {
-        allProbabilities[labels[i]] = probabilities[i];
+      int maxIndex =
+          probabilities.indexOf(maxConfidence);
+
+      Map<String, double>
+          allProbabilities = {};
+
+      for (
+        int i = 0;
+        i < labels.length;
+        i++
+      ) {
+        allProbabilities[labels[i]] =
+            probabilities[i];
       }
 
-      String predictedLabel = labels[maxIndex];
-      String mappedLabel = labelMapping[predictedLabel] ?? predictedLabel;
+      String predictedLabel =
+          labels[maxIndex];
+
+      String mappedLabel =
+          labelMapping[predictedLabel] ??
+              predictedLabel;
 
       return {
         'label': mappedLabel,
         'confidence': maxConfidence,
-        'allProbabilities': allProbabilities,
-        'isConfident': maxConfidence >= confidenceThreshold,
+        'allProbabilities':
+            allProbabilities,
+        'isConfident':
+            maxConfidence >=
+                confidenceThreshold,
       };
     } catch (e) {
-      print('❌ Error during classification: $e');
+      print(
+        '❌ Error during classification: $e',
+      );
+
       rethrow;
     }
   }
-  // Add this after the classify function
-  Map<String, dynamic> classifyDebug(img.Image image) {
+
+  // ─────────────────────────────────────────────
+  // DEBUG CLASSIFICATION WITH TIMINGS
+  // ─────────────────────────────────────────────
+
+  Map<String, dynamic> classifyDebug(
+    img.Image image,
+  ) {
     if (!_isModelLoaded) {
       throw Exception('Model not loaded');
     }
 
-    var input = _preprocessImage(image);
-    var inputReshaped = input.reshape([1, 224, 224, 3]);
-    var output = List.filled(1 * labels.length, 0.0).reshape([1, labels.length]);
+    // TOTAL TIMER
+    final totalWatch =
+        Stopwatch()..start();
 
-    _interpreter.run(inputReshaped, output);
+    // PREPROCESS TIMER
+    final preprocessWatch =
+        Stopwatch()..start();
 
-    List<double> probabilities = output[0];
+    var input =
+        _preprocessImage(image);
 
-    print('\n🔍 RAW OUTPUT FROM TFLITE:');
-    print('Raw values: $probabilities');
-    print('Sum: ${probabilities.reduce((a, b) => a + b)}');
+    preprocessWatch.stop();
 
-    for (int i = 0; i < labels.length; i++) {
-      print('${labels[i]}: ${probabilities[i]}');
+    // Input reshape
+    var inputReshaped = input.reshape([
+      1,
+      224,
+      224,
+      3,
+    ]);
+
+    // Output buffer
+    var output = List.generate(
+      1,
+      (_) => List.filled(
+        labels.length,
+        0.0,
+      ),
+    );
+
+    // INFERENCE TIMER
+    final inferenceWatch =
+        Stopwatch()..start();
+
+    _interpreter.run(
+      inputReshaped,
+      output,
+    );
+
+    inferenceWatch.stop();
+
+    // POSTPROCESS TIMER
+    final postWatch =
+        Stopwatch()..start();
+
+    List<double> probabilities =
+        List<double>.from(output[0]);
+
+    double maxConfidence =
+        probabilities.reduce(
+      (a, b) => a > b ? a : b,
+    );
+
+    int maxIndex =
+        probabilities.indexOf(
+      maxConfidence,
+    );
+
+    String predictedLabel =
+        labels[maxIndex];
+
+    String mappedLabel =
+        labelMapping[
+              predictedLabel
+            ] ??
+            predictedLabel;
+
+    // Create probability map
+    Map<String, double>
+        probabilityMap = {};
+
+    for (
+      int i = 0;
+      i < labels.length;
+      i++
+    ) {
+      probabilityMap[labels[i]] =
+          probabilities[i];
     }
 
-    double maxConfidence = probabilities.reduce((a, b) => a > b ? a : b);
-    int maxIndex = probabilities.indexOf(maxConfidence);
+    // Sort predictions
+    final sortedPredictions =
+        probabilityMap.entries.toList()
+          ..sort(
+            (a, b) => b.value.compareTo(
+              a.value,
+            ),
+          );
 
-    String predictedLabel = labels[maxIndex];
-    String mappedLabel = labelMapping[predictedLabel] ?? predictedLabel;
+    final top1 =
+        sortedPredictions[0];
+
+    final top2 =
+        sortedPredictions.length > 1
+            ? sortedPredictions[1]
+            : null;
+
+    postWatch.stop();
+
+    totalWatch.stop();
+
+    // DEBUG LOGS
+
+    print(
+      '\n🖼️ IMAGE MODEL DEBUG',
+    );
+
+    print(
+      '────────────────────────',
+    );
+
+    print(
+      '🔍 Image top-1: '
+      '${top1.key} '
+      '${(top1.value * 100).toStringAsFixed(1)}%',
+    );
+
+    if (top2 != null) {
+      print(
+        '🔍 Image top-2: '
+        '${top2.key} '
+        '${(top2.value * 100).toStringAsFixed(1)}%',
+      );
+    }
+
+    print(
+      '📊 All probs: '
+      '$probabilityMap',
+    );
+
+    print(
+      '⚡ Preprocess: '
+      '${preprocessWatch.elapsedMilliseconds}ms',
+    );
+
+    print(
+      '⚡ TFLite inference: '
+      '${inferenceWatch.elapsedMilliseconds}ms',
+    );
+
+    print(
+      '⚡ Postprocess: '
+      '${postWatch.elapsedMilliseconds}ms',
+    );
+
+    print(
+      '⏱️ Total image pipeline: '
+      '${totalWatch.elapsedMilliseconds}ms',
+    );
+
+    print(
+      '────────────────────────\n',
+    );
 
     return {
       'label': mappedLabel,
       'confidence': maxConfidence,
-      'allProbabilities': Map.fromIterables(labels, probabilities),
-      'isConfident': maxConfidence >= confidenceThreshold,
+      'allProbabilities':
+          probabilityMap,
+      'isConfident':
+          maxConfidence >=
+              confidenceThreshold,
+
+      'preprocess_ms':
+          preprocessWatch
+              .elapsedMilliseconds,
+
+      'inference_ms':
+          inferenceWatch
+              .elapsedMilliseconds,
+
+      'postprocess_ms':
+          postWatch
+              .elapsedMilliseconds,
+
+      'total_ms':
+          totalWatch
+              .elapsedMilliseconds,
     };
   }
+
+  // ─────────────────────────────────────────────
+  // DEBUG MODEL INFO
+  // ─────────────────────────────────────────────
 
   void debugModelWeights() {
     if (!_isModelLoaded) {
@@ -124,43 +344,78 @@ class ImageClassifier {
       return;
     }
 
-    print('🔍 Model interpreter: $_interpreter');
-    print('🔍 Input shape: ${_interpreter.getInputTensor(0).shape}');
-    print('🔍 Output shape: ${_interpreter.getOutputTensor(0).shape}');
+    print(
+      '🔍 Model interpreter: '
+      '$_interpreter',
+    );
+
+    print(
+      '🔍 Input shape: '
+      '${_interpreter.getInputTensor(0).shape}',
+    );
+
+    print(
+      '🔍 Output shape: '
+      '${_interpreter.getOutputTensor(0).shape}',
+    );
   }
 
+  // ─────────────────────────────────────────────
+  // IMAGE PREPROCESSING
+  // ─────────────────────────────────────────────
 
-  /// Preprocess image: resize to 224x224, no normalization here. training mai gareko.
-  Float32List _preprocessImage(img.Image image) {
-    img.Image resized = img.copyResize(
+  Float32List _preprocessImage(
+    img.Image image,
+  ) {
+    img.Image resized =
+        img.copyResize(
       image,
       width: 224,
       height: 224,
-      interpolation: img.Interpolation.linear,
+      interpolation:
+          img.Interpolation.linear,
     );
 
-    var input = Float32List(224 * 224 * 3);
+    var input = Float32List(
+      224 * 224 * 3,
+    );
+
     int pixelIndex = 0;
 
     for (int y = 0; y < 224; y++) {
-      for (int x = 0; x < 224; x++) {
-        img.Pixel pixel = resized.getPixel(x, y);
+      for (
+        int x = 0;
+        x < 224;
+        x++
+      ) {
+        img.Pixel pixel =
+            resized.getPixel(x, y);
 
-        // Feed RAW 0-255 values.
-        // The model's internal Rescaling layer will handle the math.
-        input[pixelIndex++] = pixel.r.toDouble();
-        input[pixelIndex++] = pixel.g.toDouble();
-        input[pixelIndex++] = pixel.b.toDouble();
+        // RAW 0-255 values
+        // model's internal rescaling layer handles normalization
+
+        input[pixelIndex++] =
+            pixel.r.toDouble();
+
+        input[pixelIndex++] =
+            pixel.g.toDouble();
+
+        input[pixelIndex++] =
+            pixel.b.toDouble();
       }
     }
+
     return input;
   }
 
+  // ─────────────────────────────────────────────
+  // DISPOSE
+  // ─────────────────────────────────────────────
 
-  /// Dispose the interpreter to free resources
   void dispose() {
     if (_isModelLoaded) {
       _interpreter.close();
+
       _isModelLoaded = false;
     }
   }

@@ -1,11 +1,9 @@
 // lib/services/hybrid_intent_classifier.dart
 //
-// SIMPLIFIED AMBIGUITY POLICY:
-//   Always gather context UNLESS a high-confidence keyword fires.
-//   Keyword patterns are hand-written and unambiguous by design — if one
-//   matches, we trust it and skip context gathering entirely.
-//   For everything else (pure ML path), we always ask context questions
-//   before locking in the intent.
+// AMBIGUITY / CONTEXT POLICY:
+//   Skip context gathering when hybrid keyword patterns OR ambiguity-detector
+//   signature keywords match the classified intent.
+//   Only enter context gathering on the ML path when neither keyword source hits.
 
 import 'package:flutter/material.dart';
 import 'injury_classifier.dart';
@@ -96,13 +94,14 @@ class HybridIntentClassifier {
       String userText) async {
 
     // ── Step 1: Keyword fast path ────────────────────────────────────────
-    // Keywords are specific compound phrases — much harder to misfire than
-    // single-word patterns.  If one hits, we trust it completely.
+    // Any hybrid keyword pattern match is trusted — go straight to first aid.
     final kwResult = _tryKeywordMatching(userText);
-    if (kwResult["confidence"] >= 0.8) {
+    final kwMatches = kwResult["matches"] as int;
+    if (kwMatches > 0) {
       debugPrint("✅ Keyword hit: ${kwResult['intent']} — skipping ML + context");
       return {
         ...kwResult,
+        "confidence"       : 0.95,
         "needs_context"    : false,
         "ambiguity_report" : null,
       };
@@ -113,11 +112,12 @@ class HybridIntentClassifier {
 
     if (mlResult == null) {
       // Model unavailable — fall back to keyword if we have one.
-      if (kwResult["intent"] != "unknown") {
+      if (kwMatches > 0) {
         debugPrint("⚠️ ML unavailable — keyword fallback: ${kwResult['intent']}");
         return {
           ...kwResult,
-          "needs_context"    : true,  // still gather context even for keyword fallback
+          "confidence"       : 0.95,
+          "needs_context"    : false,
           "ambiguity_report" : null,
         };
       }
@@ -144,11 +144,29 @@ class HybridIntentClassifier {
         "gap: ${(report.gap * 100).toStringAsFixed(1)}pp  |  "
         "best confusable: ${report.alternativeLabel}");
 
-    // ── Step 4: ALWAYS gather context on the ML path ─────────────────────
-    // We never trust ML alone on the first pass.
-    // Context questions will be asked, answers concatenated, then re-run.
+    // ── Step 4: ML path — gather context only when no keyword evidence ───
+    final top1 = report.top1Label;
+    final hasKeywordSupport = _matchesKeywordForIntent(userText, top1) ||
+        AmbiguityDetector.hasSignatureKeywords(top1, userText);
+
+    if (hasKeywordSupport) {
+      debugPrint("✅ Keyword/signature support for $top1 — skipping context");
+      return {
+        "intent"           : top1,
+        "confidence"       : report.top1Confidence,
+        "ml_confidence"    : report.top1Confidence,
+        "top2_label"       : report.top2Label,
+        "top2_confidence"  : report.top2Confidence,
+        "gap"              : report.gap,
+        "method"           : "ml_keyword_supported",
+        "ambiguity_report" : report,
+        "needs_context"    : false,
+      };
+    }
+
+    debugPrint("🔍 No keyword hit — gathering context for $top1");
     return {
-      "intent"           : report.top1Label,
+      "intent"           : top1,
       "confidence"       : report.top1Confidence,
       "ml_confidence"    : report.top1Confidence,
       "top2_label"       : report.top2Label,
@@ -156,7 +174,7 @@ class HybridIntentClassifier {
       "gap"              : report.gap,
       "method"           : "ml_needs_context",
       "ambiguity_report" : report,
-      "needs_context"    : true,  // ← ALWAYS true on ML path
+      "needs_context"    : true,
     };
   }
 
@@ -229,6 +247,12 @@ class HybridIntentClassifier {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────
+
+  bool _matchesKeywordForIntent(String text, String intent) {
+    final patterns = keywordPatterns[intent];
+    if (patterns == null) return false;
+    return patterns.any((p) => p.hasMatch(text));
+  }
 
   Map<String, dynamic> _tryKeywordMatching(String text) {
     for (final entry in keywordPatterns.entries) {

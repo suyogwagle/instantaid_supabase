@@ -28,7 +28,7 @@ class RuleEngine {
       return ["yes", "y", "हो", "हुन्छ"].any(normalized.contains);
     }
     if (k == "no" || k == "होइन") {
-      return ["no", "n", "होइन", "हुँदैन"].any(normalized.contains);
+      return ["no", "n", "nope", "not really", "होइन", "हुँदैन"].any(normalized.contains);
     }
     if (k == "unknown" || k == "थाहा छैन") {
       return ["unknown", "dont know", "not sure", "thaha", "नथाहा"]
@@ -77,6 +77,9 @@ class DialogueManager {
   /// The candidate intent we got from the first (low-confidence) pass.
   String _candidateIntent = "";
 
+  /// Confusable alternative from ambiguity report (if any).
+  String? _alternativeIntent;
+
   /// Context questions to ask during the gathering phase.
   List<ContextQuestion> _contextQuestions = [];
 
@@ -121,6 +124,8 @@ class DialogueManager {
   /// clinical dialogue; it should call [supplyContextAnswer] instead).
   bool get isGatheringContext => _phase == DialoguePhase.gatheringContext;
 
+  String? get alternativeIntent => _alternativeIntent;
+
   // ── Exposed for external callers (image classifier path) ──────────────
   void setIntentConfidence(double confidence) {
     _intentConfidence = confidence;
@@ -137,6 +142,7 @@ class DialogueManager {
     _severityConfidence = 0.0;
     _originalUserText = "";
     _candidateIntent = "";
+    _alternativeIntent = null;
     _contextQuestions = [];
     _contextQuestionIndex = 0;
     _contextKeys.clear();
@@ -165,6 +171,7 @@ class DialogueManager {
   }) {
     _originalUserText = originalText;
     _candidateIntent = candidateIntent;
+    _alternativeIntent = alternativeIntent;
     _intentConfidence = initialConfidence;
     activeGuidelines = isNepali ? nepaliGuidelines : englishGuidelines;
 
@@ -200,9 +207,9 @@ class DialogueManager {
   // Phase 1  :  supplyContextAnswer
   // ════════════════════════════════════════════════════════════════════════
 
-  /// Feed one context answer.  Returns either the NEXT context question, OR
-  /// a [ContextGatherResult] signalling that gathering is done and the caller
-  /// must re-classify with [HybridIntentClassifier.classifyWithContext].
+  /// Feed one context answer. Caller should re-classify after every answer
+  /// ([needsPartialReclassification]) and use [ContextGatherer.shouldExitContextGathering]
+  /// to decide whether to skip [pendingNextQuestion].
   ContextGatherResult supplyContextAnswer(
       String answer, bool isNepali) {
     if (_phase != DialoguePhase.gatheringContext) {
@@ -217,20 +224,26 @@ class DialogueManager {
     _recordLog("CONTEXT_Q$_contextQuestionIndex: ${_contextKeys.last} = ${_contextValues.last}");
     _contextQuestionIndex++;
 
+    String? pendingNext;
     if (_contextQuestionIndex < _contextQuestions.length) {
-      // More questions to ask.
       final nextQ = _contextQuestions[_contextQuestionIndex];
-      final questionText = isNepali ? nextQ.questionNp : nextQ.questionEn;
-      return ContextGatherResult.askNextQuestion(questionText);
+      pendingNext = isNepali ? nextQ.questionNp : nextQ.questionEn;
     }
 
-    // All context collected → tell the caller to re-classify.
-    return ContextGatherResult.readyForReclassification(
+    return ContextGatherResult.afterContextAnswer(
       originalText: _originalUserText,
       candidateIntent: _candidateIntent,
+      alternativeIntent: _alternativeIntent,
       contextKeys: List.unmodifiable(_contextKeys),
       contextValues: List.unmodifiable(_contextValues),
+      pendingNextQuestion: pendingNext,
     );
+  }
+
+  void skipRemainingContextQuestions() {
+    if (_phase != DialoguePhase.gatheringContext) return;
+    _recordLog(
+        "CONTEXT_EARLY_EXIT: answered ${_contextKeys.length}/${_contextQuestions.length} scheduled");
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -323,11 +336,11 @@ class DialogueManager {
         ? questions[0]
         : isNepali
             ? "के व्यक्ति बेहोस छन् वा सास फेर्न सकेका छैनन्?"
-            : "Is the person unconscious, not breathing normally, or bleeding heavily?";
+            : "Is the person unconscious, not breathing normally?";
 
     final detectedLabel = isNepali
-        ? "✅ पत्ता लाग्यो: ${intent.replaceAll('_', ' ').toUpperCase()}"
-        : "✅ DETECTED: ${intent.replaceAll('_', ' ').toUpperCase()}";
+        ? "तपाईंलाई ${intent.replaceAll('_', ' ').toLowerCase()} भएको हुन पर्छ।\n📋 अब केही छोटो प्रश्नहरू सोध्छु:"
+        : "I'm pretty sure it's ${intent.replaceAll('_', ' ').toLowerCase()}.\n📋 First, a few quick safety questions:";
 
     List<String> response = [detectedLabel];
 
@@ -337,11 +350,7 @@ class DialogueManager {
           isNepali: isNepali));
     }
 
-    final checkLabel = isNepali
-        ? "📋 कृपया गम्भीरता जाँच गर्नुहोस्:"
-        : "📋 First, a quick criticality check:";
-
-    response.addAll([checkLabel, firstQ]);
+    response.add(firstQ);
 
     _recordLog(
         "START: $intent (${isNepali ? "NP" : "EN"}) - Severity: $_detectedSeverity");
@@ -362,8 +371,8 @@ class DialogueManager {
     }
     if (_phase == DialoguePhase.complete) {
       return isNepali
-          ? ["✅ मार्गदर्शन पूरा भयो। 'नयाँ आपतकालीन' भन्नुहोस् पुन: सुरु गर्न।"]
-          : ["✅ Guidance complete. Say 'new emergency' to start fresh."];
+          ? [" मार्गदर्शन पूरा भयो। 'नयाँ आपतकालीन' भन्नुहोस् पुन: सुरु गर्न।"]
+          : [" Guidance complete. Say 'new emergency' to start fresh."];
     }
 
     _answers.add(userAnswer);
@@ -501,36 +510,41 @@ class DialogueManager {
 /// Returned by [DialogueManager.supplyContextAnswer].
 class ContextGatherResult {
   final bool isDone;
-  final String? nextQuestion;
+  final bool needsPartialReclassification;
+  final String? pendingNextQuestion;
 
-  // When isDone == true:
   final String? originalText;
   final String? candidateIntent;
+  final String? alternativeIntent;
   final List<String>? contextKeys;
   final List<String>? contextValues;
 
   ContextGatherResult._({
     required this.isDone,
-    this.nextQuestion,
+    this.needsPartialReclassification = false,
+    this.pendingNextQuestion,
     this.originalText,
     this.candidateIntent,
+    this.alternativeIntent,
     this.contextKeys,
     this.contextValues,
   });
 
-  factory ContextGatherResult.askNextQuestion(String question) =>
-      ContextGatherResult._(isDone: false, nextQuestion: question);
-
-  factory ContextGatherResult.readyForReclassification({
+  factory ContextGatherResult.afterContextAnswer({
     required String originalText,
     required String candidateIntent,
+    required String? alternativeIntent,
     required List<String> contextKeys,
     required List<String> contextValues,
+    required String? pendingNextQuestion,
   }) =>
       ContextGatherResult._(
-        isDone: true,
+        isDone: pendingNextQuestion == null,
+        needsPartialReclassification: true,
+        pendingNextQuestion: pendingNextQuestion,
         originalText: originalText,
         candidateIntent: candidateIntent,
+        alternativeIntent: alternativeIntent,
         contextKeys: contextKeys,
         contextValues: contextValues,
       );
